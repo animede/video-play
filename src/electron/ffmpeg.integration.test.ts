@@ -3,18 +3,20 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { decodeFramesJpeg, extractArgs, getFrameWindow, probeVideo, removeArgs } from './ffmpeg'
+import { concatenateArgs, decodeFramesJpeg, extractArgs, getFrameWindow, probeVideo, removeArgs } from './ffmpeg'
 
 const ffmpeg = require('ffmpeg-static') as string
 let directory: string
 let source: string
 let longSource: string
+let secondSource: string
 
 describe('FFmpeg integration', () => {
   beforeAll(() => {
     directory = mkdtempSync(path.join(tmpdir(), 'video-play-test-'))
     source = path.join(directory, 'input.mp4')
     longSource = path.join(directory, 'long-input.mp4')
+    secondSource = path.join(directory, 'second-input.mp4')
     execFileSync(ffmpeg, [
       '-hide_banner', '-loglevel', 'error',
       '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30',
@@ -25,6 +27,11 @@ describe('FFmpeg integration', () => {
       '-hide_banner', '-loglevel', 'error',
       '-f', 'lavfi', '-i', 'testsrc2=size=64x64:rate=2',
       '-t', '70', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-y', longSource,
+    ])
+    execFileSync(ffmpeg, [
+      '-hide_banner', '-loglevel', 'error',
+      '-f', 'lavfi', '-i', 'testsrc2=size=160x120:rate=15',
+      '-t', '1.5', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-y', secondSource,
     ])
   }, 15_000)
 
@@ -73,5 +80,22 @@ describe('FFmpeg integration', () => {
     const frameWindow = await getFrameWindow(output, 0)
     expect(metadata.duration).toBeCloseTo(2, 1)
     expect(frameWindow.timestamps).toHaveLength(60)
+  })
+
+  it('concatenates different sizes and supplies missing audio', async () => {
+    const output = path.join(directory, 'concatenated.mp4')
+    const firstMetadata = await probeVideo(source)
+    const secondMetadata = await probeVideo(secondSource)
+    const args = concatenateArgs([
+      { path: source, metadata: firstMetadata },
+      { path: secondSource, metadata: secondMetadata },
+    ], output)
+    execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', ...args])
+    const metadata = await probeVideo(output)
+    const frameWindow = await getFrameWindow(output, 0)
+    expect(metadata).toMatchObject({ width: 320, height: 180, averageFps: 30, hasAudio: true })
+    expect(metadata.duration).toBeCloseTo(4.5, 1)
+    expect(frameWindow.timestamps.length).toBeGreaterThanOrEqual(134)
+    expect(frameWindow.timestamps.length).toBeLessThanOrEqual(136)
   })
 })

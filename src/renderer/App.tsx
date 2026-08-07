@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FrameWindow, OperationProgress, RegisteredVideo } from '../shared/types'
+import ConcatPanel from './ConcatPanel'
 import { formatTime, readableError } from './utils'
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4]
@@ -26,6 +27,7 @@ function App() {
   const frameDecodeSequence = useRef(0)
   const frameImageCache = useRef(new Map<string, ExactFrame>())
   const [video, setVideo] = useState<RegisteredVideo | null>(null)
+  const [activeTab, setActiveTab] = useState<'player' | 'concat'>('player')
   const [videoUrl, setVideoUrl] = useState('')
   const [currentTime, setCurrentTime] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -327,12 +329,18 @@ function App() {
   const selectionLeft = duration ? inPoint / duration * 100 : 0
   const selectionWidth = duration ? (outPoint - inPoint) / duration * 100 : 0
 
+  const switchTab = (tab: 'player' | 'concat') => {
+    if (tab === 'concat') videoRef.current?.pause()
+    setActiveTab(tab)
+  }
+
   return (
     <main
       className={`app ${dragging ? 'is-dragging' : ''}`}
-      onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
+      onDragOver={(event) => { if (activeTab === 'player') { event.preventDefault(); setDragging(true) } }}
       onDragLeave={(event) => { if (event.currentTarget === event.target) setDragging(false) }}
       onDrop={(event) => {
+        if (activeTab !== 'player') return
         event.preventDefault()
         setDragging(false)
         void openFile(event.dataTransfer.files[0])
@@ -343,17 +351,24 @@ function App() {
           <span className="brand-mark">▶</span>
           <span>Video Play</span>
         </div>
-        {video && <div className="file-title" title={video.path}>{video.name}</div>}
-        <button className="button primary" onClick={() => inputRef.current?.click()} disabled={Boolean(job)}>
+        <nav className="app-tabs" aria-label="機能">
+          <button className={activeTab === 'player' ? 'active' : ''} onClick={() => switchTab('player')} aria-selected={activeTab === 'player'}>再生・編集</button>
+          <button className={activeTab === 'concat' ? 'active' : ''} onClick={() => switchTab('concat')} aria-selected={activeTab === 'concat'}>動画連結</button>
+        </nav>
+        <div className="file-title" title={activeTab === 'player' ? video?.path : undefined}>
+          {activeTab === 'player' ? video?.name : 'ドロップ順にMP4を連結'}
+        </div>
+        {activeTab === 'player' && <button className="button primary" onClick={() => inputRef.current?.click()} disabled={Boolean(job)}>
           動画を開く
-        </button>
+        </button>}
         <input ref={inputRef} className="hidden" type="file" accept="video/mp4,.mp4" onChange={(e) => {
           void openFile(e.target.files?.[0])
           e.target.value = ''
         }} />
       </header>
 
-      <section className="viewer-shell">
+      <div className="tab-page player-page" hidden={activeTab !== 'player'}>
+        <section className="viewer-shell">
         {videoUrl ? (
           <div className="media-stage">
             <video
@@ -382,9 +397,9 @@ function App() {
           </button>
         )}
         {dragging && <div className="drop-overlay">MP4ファイルをドロップ</div>}
-      </section>
+        </section>
 
-      <section className="control-panel" aria-disabled={!video}>
+        <section className="control-panel" aria-disabled={!video}>
         <div className="timeline-wrap">
           <div className="selection-track" aria-hidden="true">
             <span style={{ left: `${selectionLeft}%`, width: `${selectionWidth}%` }} />
@@ -449,7 +464,10 @@ function App() {
             <button className="button danger" onClick={() => void runOperation('remove')} disabled={!selectionValid || Boolean(job)}>区間を削除</button>
           </div>
         </div>
-      </section>
+        </section>
+      </div>
+
+      <ConcatPanel hidden={activeTab !== 'concat'} />
 
       {(error || notice) && (
         <div className={`toast ${error ? 'error' : ''}`} role="status">

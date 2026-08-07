@@ -23,6 +23,11 @@ interface RunningJob {
   cancelled: boolean
 }
 
+export interface ConcatInput {
+  path: string
+  metadata: VideoMetadata
+}
+
 const runningJobs = new Map<string, RunningJob>()
 const FRAME_WINDOW_SECONDS = 30
 const MAX_CACHED_WINDOWS = 12
@@ -301,6 +306,42 @@ export function removeArgs(
   args.push('-fps_mode', 'vfr', ...videoEncoding)
   if (hasAudio) args.push(...audioEncoding)
   args.push('-movflags', '+faststart', '-y', output)
+  return args
+}
+
+export function concatenateArgs(inputs: ConcatInput[], output: string): string[] {
+  if (inputs.length < 2) throw new Error('連結する動画を2本以上指定してください。')
+  const first = inputs[0].metadata
+  const width = Math.max(2, Math.floor(first.width / 2) * 2)
+  const height = Math.max(2, Math.floor(first.height / 2) * 2)
+  const fps = Math.max(1, first.averageFps).toFixed(6)
+  const args = inputs.flatMap((input) => ['-i', input.path])
+  const filters: string[] = []
+  const concatInputs: string[] = []
+
+  inputs.forEach((input, index) => {
+    const duration = input.metadata.duration.toFixed(6)
+    filters.push(
+      `[${index}:v:0]scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
+      `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,` +
+      `fps=${fps},format=yuv420p,setpts=PTS-STARTPTS[v${index}]`,
+    )
+    if (input.metadata.hasAudio) {
+      filters.push(
+        `[${index}:a:0]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,` +
+        `apad,atrim=duration=${duration},asetpts=PTS-STARTPTS[a${index}]`,
+      )
+    } else {
+      filters.push(
+        `anullsrc=r=48000:cl=stereo,atrim=duration=${duration},asetpts=PTS-STARTPTS[a${index}]`,
+      )
+    }
+    concatInputs.push(`[v${index}][a${index}]`)
+  })
+  filters.push(`${concatInputs.join('')}concat=n=${inputs.length}:v=1:a=1[v][a]`)
+
+  args.push('-filter_complex', filters.join(';'), '-map', '[v]', '-map', '[a]')
+  args.push('-r', fps, ...videoEncoding, ...audioEncoding, '-movflags', '+faststart', '-y', output)
   return args
 }
 

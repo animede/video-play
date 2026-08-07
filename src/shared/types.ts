@@ -50,6 +50,11 @@ export interface FrameRequest {
   time: number
 }
 
+export interface ConcatRequest {
+  jobId: string
+  sourcePaths: string[]
+}
+
 export interface VideoPlayApi {
   registerVideo(file: File): Promise<RegisteredVideo>
   getFrameWindow(sourcePath: string, time: number): Promise<FrameWindow>
@@ -57,6 +62,7 @@ export interface VideoPlayApi {
   saveFrame(request: FrameRequest): Promise<OperationResult>
   extractRange(request: EditRequest): Promise<OperationResult>
   removeRange(request: EditRequest): Promise<OperationResult>
+  concatenateVideos(request: ConcatRequest): Promise<OperationResult>
   cancelJob(jobId: string): Promise<void>
   onProgress(callback: (progress: OperationProgress) => void): () => void
 }

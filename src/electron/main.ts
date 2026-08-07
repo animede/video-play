@@ -1,9 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, session } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { EditRequest, FrameRequest, RegisteredVideo, VideoMetadata } from '../shared/types'
+import type { ConcatRequest, EditRequest, FrameRequest, RegisteredVideo, VideoMetadata } from '../shared/types'
 import {
   cancelJob,
+  concatenateArgs,
   decodeFramesJpeg,
   defaultOutputPath,
   extractArgs,
@@ -172,6 +173,27 @@ ipcMain.handle('video:remove', async (event, request: EditRequest) => {
     request.jobId,
     removeArgs(source, request.start, request.end, metadata.duration, metadata.hasAudio, output),
     metadata.duration - (request.end - request.start),
+    event.sender,
+    output,
+  )
+})
+
+ipcMain.handle('video:concatenate', async (event, request: ConcatRequest) => {
+  if (!Array.isArray(request.sourcePaths) || request.sourcePaths.length < 2 || request.sourcePaths.length > 100) {
+    throw new Error('連結する動画を2本以上100本以下で指定してください。')
+  }
+  const sources = request.sourcePaths.map(assertAllowed)
+  const inputs = sources.map((source) => ({ path: source, metadata: registeredMetadata(source) }))
+  const output = await chooseOutput(defaultOutputPath(sources[0], '-concatenated'), [
+    { name: 'MP4動画', extensions: ['mp4'] },
+  ])
+  if (!output) return { cancelled: true }
+  if (sources.includes(path.resolve(output))) throw new Error('入力動画とは別のファイル名を指定してください。')
+  const totalDuration = inputs.reduce((sum, input) => sum + input.metadata.duration, 0)
+  return executeJob(
+    request.jobId,
+    concatenateArgs(inputs, output),
+    totalDuration,
     event.sender,
     output,
   )

@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { extractArgs, frameArgs, removeArgs } from './ffmpeg'
+import { concatenateArgs, extractArgs, frameArgs, removeArgs } from './ffmpeg'
+import type { VideoMetadata } from '../shared/types'
+
+const metadata = (overrides: Partial<VideoMetadata> = {}): VideoMetadata => ({
+  duration: 2,
+  width: 320,
+  height: 180,
+  fps: 30,
+  averageFps: 30,
+  isVariableFrameRate: false,
+  hasAudio: true,
+  codec: 'h264',
+  ...overrides,
+})
 
 describe('FFmpeg argument construction', () => {
   it('does not invoke a shell for file paths', () => {
@@ -25,5 +38,18 @@ describe('FFmpeg argument construction', () => {
   it('uses a single extraction when removing from the beginning', () => {
     const args = removeArgs('in.mp4', 0, 4, 10, false, 'out.mp4')
     expect(args).toEqual(extractArgs('in.mp4', 4, 10, false, 'out.mp4'))
+  })
+
+  it('normalizes and concatenates videos with and without audio', () => {
+    const args = concatenateArgs([
+      { path: 'first.mp4', metadata: metadata() },
+      { path: 'second.mp4', metadata: metadata({ width: 640, height: 480, hasAudio: false }) },
+    ], 'joined.mp4')
+    const filter = args[args.indexOf('-filter_complex') + 1]
+    expect(args.slice(0, 4)).toEqual(['-i', 'first.mp4', '-i', 'second.mp4'])
+    expect(filter).toContain('scale=320:180')
+    expect(filter).toContain('anullsrc=r=48000:cl=stereo')
+    expect(filter).toContain('concat=n=2:v=1:a=1')
+    expect(args[args.indexOf('-r') + 1]).toBe('30.000000')
   })
 })

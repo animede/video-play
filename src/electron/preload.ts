@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { EditRequest, FrameRequest, OperationProgress, VideoPlayApi } from '../shared/types'
+import type { ConcatRequest, EditRequest, FrameRequest, OperationProgress, VideoPlayApi } from '../shared/types'
 
 const api: VideoPlayApi = {
   registerVideo(file: File) {
@@ -19,6 +19,9 @@ const api: VideoPlayApi = {
   },
   removeRange(request: EditRequest) {
     return ipcRenderer.invoke('video:remove', request)
+  },
+  concatenateVideos(request: ConcatRequest) {
+    return ipcRenderer.invoke('video:concatenate', request)
   },
   cancelJob(jobId: string) {
     return ipcRenderer.invoke('video:cancel', jobId)
