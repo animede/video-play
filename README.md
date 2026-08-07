@@ -21,7 +21,7 @@ WindowsとLinuxで動作する、MP4動画の再生・簡易編集用デスク�
 
 ## 必要環境
 
-- Node.js 26（`.nvmrc`で固定）
+- Node.js 26.x（`.nvmrc`でメジャーバージョンを固定。26.7などの26系を使用できます）
 - npm 11以降
 
 FFmpegとffprobeはnpm依存パッケージとしてOS別バイナリが入り、アプリにも同梱されます。開発時に別のバイナリを使う場合は、`VIDEO_PLAY_FFMPEG`と`VIDEO_PLAY_FFPROBE`に絶対パスを設定できます。
@@ -34,6 +34,39 @@ npm run dev
 ```
 
 キーボードではSpaceで再生・一時停止、左右矢印で前後のコマへ移動できます。
+
+### Windowsでのセットアップに関する注意
+
+PowerShellでは、実行ポリシーによって`npm.ps1`が拒否されることがあります。実行ポリシーを変更せず、次のように`npm.cmd`を使用できます。
+
+```powershell
+node --version
+npm.cmd --version
+npm.cmd ci --include=dev
+npm.cmd run dev
+```
+
+`npm run dist:win`で「`tsc`が認識されない」などのエラーが表示される場合は、ビルドに必要な`devDependencies`がインストールされていません。プロジェクトフォルダで以下を実行してください。`tsc`をグローバルインストールする必要はありません。
+
+```powershell
+Remove-Item Env:NODE_ENV -ErrorAction SilentlyContinue
+Remove-Item Env:NPM_CONFIG_PRODUCTION -ErrorAction SilentlyContinue
+
+npm.cmd config delete omit
+npm.cmd ci --include=dev
+.\node_modules\.bin\tsc.cmd --version
+npm.cmd run typecheck
+npm.cmd run dist:win
+```
+
+`npm.cmd ci --include=dev`が失敗する場合は、代わりに以下を使用してください。
+
+```powershell
+npm.cmd install --include=dev
+npm.cmd run dist:win
+```
+
+「`npm`はコマンドレット、関数、スクリプトファイル、または実行可能なプログラムとして認識されません」と表示される場合は、Node.js 26.xがインストールされていることを確認し、PowerShellをすべて閉じてから開き直してください。
 
 ## 検証
 
