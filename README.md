@@ -1,6 +1,8 @@
-# Video Play
+# Video Player
 
 WindowsとLinuxで動作する、MP4動画の再生・簡易編集用デスクトップアプリです。
+
+注: リポジトリ名は video-play ですが、アプリ表示名は現在 Video Play です。
 
 ## ダウンロード
 
@@ -9,6 +11,12 @@ WindowsとLinuxで動作する、MP4動画の再生・簡易編集用デスク�
 - [Windows (v0.1.0) 直接ダウンロード](https://github.com/animede/video-play/releases/download/v0.1.0/Video.Play-0.1.0-Windows-x64.exe)
 - [Linux AppImage (v0.1.0) 直接ダウンロード](https://github.com/animede/video-play/releases/download/v0.1.0/Video.Play-0.1.0-Linux-x86_64.AppImage)
 - [Linux deb (v0.1.0) 直接ダウンロード](https://github.com/animede/video-play/releases/download/v0.1.0/Video.Play-0.1.0-Linux-amd64.deb)
+
+## GUI見本
+
+GUIスクリーンショットを追加する場合は、docs/images/gui-sample.png を配置して次の形式で埋め込めます。
+
+![Video Player GUI見本](docs/images/gui-sample.png)
 
 ## 機能
 
