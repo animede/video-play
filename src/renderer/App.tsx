@@ -406,7 +406,7 @@ function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark">▶</span>
-          <span>Video Play</span>
+          <span>Video-player</span>
         </div>
         <nav className="app-tabs" aria-label="機能">
           <button className={activeTab === 'player' ? 'active' : ''} onClick={() => switchTab('player')} aria-selected={activeTab === 'player'}>再生・編集</button>

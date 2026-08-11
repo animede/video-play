@@ -110,7 +110,7 @@ function createWindow(): void {
     minWidth: 760,
     minHeight: 560,
     backgroundColor: '#111318',
-    title: 'Video Play',
+    title: 'Video-player',
     icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

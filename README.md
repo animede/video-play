@@ -14,7 +14,7 @@ WindowsとLinuxで動作する、MP4動画の再生・簡易編集用デスク�
 
 再生・編集タブの画面例です。
 
-![Video Player GUI見本](docs/images/gui-sample.png)
+![Video-player GUI見本](docs/images/gui-sample.png)
 
 ## 機能
 
@@ -87,7 +87,7 @@ npm.cmd run dist:win
 
 ### Windows側で再ビルドする手順
 
-すでにWindowsへリポジトリを取得済みの場合は、Video Playを終了してからプロジェクトフォルダをPowerShellで開き、以下を順番に実行します。Linux側で作成した`node_modules`やビルド成果物は持ち込まず、Windows側で依存パッケージをインストールしてください。
+すでにWindowsへリポジトリを取得済みの場合は、Video-playerを終了してからプロジェクトフォルダをPowerShellで開き、以下を順番に実行します。Linux側で作成した`node_modules`やビルド成果物は持ち込まず、Windows側で依存パッケージをインストールしてください。
 
 ```powershell
 # 1. 最新のソースを取得
@@ -111,9 +111,9 @@ npm.cmd test
 npm.cmd run dist:win
 ```
 
-生成されたインストーラーは、プロジェクト内の`release`フォルダにある`Video Play-<バージョン>-Windows-<アーキテクチャ>.exe`です。再ビルド前の`release`フォルダを削除する必要はありませんが、同じバージョンの成果物は置き換えられます。
+生成されたインストーラーは、プロジェクト内の`release`フォルダにある`Video-player-<バージョン>-Windows-<アーキテクチャ>.exe`です。再ビルド前の`release`フォルダを削除する必要はありませんが、同じバージョンの成果物は置き換えられます。
 
-ローカルに未コミットの変更があると`git pull --ff-only`が失敗する場合があります。その場合は変更をコミットまたは退避してから再実行してください。`npm.cmd ci`でファイル使用中のエラーが出る場合は、起動中のVideo Play、開発サーバー、Electronを終了してから実行します。
+ローカルに未コミットの変更があると`git pull --ff-only`が失敗する場合があります。その場合は変更をコミットまたは退避してから再実行してください。`npm.cmd ci`でファイル使用中のエラーが出る場合は、起動中のVideo-player、開発サーバー、Electronを終了してから実行します。
 
 ## 検証
 
@@ -148,7 +148,7 @@ sudo apt install /tmp/video-play-0.1.0-amd64.deb
 
 ホームディレクトリを他ユーザーが参照できない環境では、`release`内のdebをAPTへ直接指定すると、`_apt`ユーザーからアクセスできないという通知が表示されます。これはパッケージ自体の権限エラーではありません。上記のように一度`/tmp`へコピーすると、APTのサンドボックスを保ったままインストールできます。
 
-インストール後、デスクトップ環境のアプリ一覧で「Video Play」を検索して起動できます。アンインストールする場合は`sudo apt remove video-play`を実行します。
+インストール後、デスクトップ環境のアプリ一覧で「Video-player」を検索して起動できます。アンインストールする場合は`sudo apt remove video-play`を実行します。
 
 AppImage版はインストール不要です。ファイルマネージャーで実行権限を付けるか、次のコマンドを一度実行した後、`release`内のAppImageをダブルクリックして起動できます。
 

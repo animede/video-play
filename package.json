@@ -2,7 +2,7 @@
   "name": "video-play",
   "version": "0.1.0",
   "private": true,
-  "author": "Video Play contributors",
+  "author": "Video-player contributors",
   "desktopName": "jp.videoplay.desktop",
   "description": "Windows/Linux desktop MP4 player and simple editor",
   "main": "dist-electron/electron/main.js",
@@ -40,7 +40,7 @@
   },
   "build": {
     "appId": "jp.videoplay.desktop",
-    "productName": "Video Play",
+    "productName": "Video-player",
     "asar": true,
     "asarUnpack": [
       "node_modules/ffmpeg-static/**/*",
@@ -71,10 +71,10 @@
       "target": ["AppImage", "deb"],
       "icon": "build/icon.png",
       "category": "AudioVideo",
-      "maintainer": "Video Play contributors <noreply@videoplay.local>",
+      "maintainer": "Video-player contributors <noreply@videoplay.local>",
       "desktop": {
         "entry": {
-          "Name": "Video Play",
+          "Name": "Video-player",
           "Comment": "MP4動画の再生と簡易編集",
           "StartupNotify": "true"
         }
