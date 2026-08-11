@@ -2,6 +2,14 @@
 
 WindowsとLinuxで動作する、MP4動画の再生・簡易編集用デスクトップアプリです。
 
+## ダウンロード
+
+- [最新版リリース](https://github.com/animede/video-play/releases/latest)
+- [v0.1.0 リリースページ](https://github.com/animede/video-play/releases/tag/v0.1.0)
+- [Windows (v0.1.0) 直接ダウンロード](https://github.com/animede/video-play/releases/download/v0.1.0/Video.Play-0.1.0-Windows-x64.exe)
+- [Linux AppImage (v0.1.0) 直接ダウンロード](https://github.com/animede/video-play/releases/download/v0.1.0/Video.Play-0.1.0-Linux-x86_64.AppImage)
+- [Linux deb (v0.1.0) 直接ダウンロード](https://github.com/animede/video-play/releases/download/v0.1.0/Video.Play-0.1.0-Linux-amd64.deb)
+
 ## 機能
 
 - MP4ファイルの選択とドラッグ＆ドロップ
