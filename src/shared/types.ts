@@ -63,6 +63,9 @@ export interface VideoPlayApi {
   extractRange(request: EditRequest): Promise<OperationResult>
   removeRange(request: EditRequest): Promise<OperationResult>
   concatenateVideos(request: ConcatRequest): Promise<OperationResult>
+  getOutputDirectory(): Promise<string>
+  chooseOutputDirectory(): Promise<string | null>
+  clearOutputDirectory(): Promise<void>
   cancelJob(jobId: string): Promise<void>
   onProgress(callback: (progress: OperationProgress) => void): () => void
 }

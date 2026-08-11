@@ -18,6 +18,10 @@ interface ExactFrame {
   time: number
 }
 
+interface TimelinePreview extends ExactFrame {
+  x: number
+}
+
 function App() {
   const inputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -42,6 +46,12 @@ function App() {
   const [job, setJob] = useState<ActiveJob | null>(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [rangeZoom, setRangeZoom] = useState(false)
+  const [timelinePreview, setTimelinePreview] = useState<TimelinePreview | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [outputDirectory, setOutputDirectory] = useState('')
+  const previewSequence = useRef(0)
+  const previewTimeout = useRef<number | null>(null)
 
   const duration = video?.metadata.duration ?? 0
   const selectionValid = Boolean(video && outPoint - inPoint >= 0.001)
@@ -50,6 +60,13 @@ function App() {
   useEffect(() => window.videoPlay.onProgress((progress) => {
     setJob((current) => current?.jobId === progress.jobId ? { ...current, ...progress } : current)
   }), [])
+
+  useEffect(() => { void window.videoPlay.getOutputDirectory().then(setOutputDirectory) }, [])
+
+  useEffect(() => () => {
+    if (previewTimeout.current !== null) window.clearTimeout(previewTimeout.current)
+    if (timelinePreview) URL.revokeObjectURL(timelinePreview.url)
+  }, [timelinePreview])
 
   useEffect(() => () => {
     if (videoUrl) URL.revokeObjectURL(videoUrl)
@@ -155,6 +172,7 @@ function App() {
       setCurrentTime(0)
       setInPoint(0)
       setOutPoint(registered.metadata.duration)
+      setRangeZoom(false)
       frameWindowsRef.current = []
       inflightFrameWindows.current.clear()
       setFrameWindows([])
@@ -324,10 +342,49 @@ function App() {
     if (videoRef.current) videoRef.current.playbackRate = next
   }
 
+  const jump = (seconds: number) => seek(currentTime + seconds)
+
+  const previewTimeline = (event: React.MouseEvent<HTMLInputElement>) => {
+    if (!video) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
+    const min = rangeZoom ? inPoint : 0
+    const max = rangeZoom ? outPoint : duration
+    const time = min + ratio * (max - min)
+    const x = event.clientX - rect.left
+    if (previewTimeout.current !== null) window.clearTimeout(previewTimeout.current)
+    const sequence = ++previewSequence.current
+    previewTimeout.current = window.setTimeout(async () => {
+      try {
+        const [decoded] = await window.videoPlay.decodeFrames(video.path, [time])
+        if (!decoded || sequence !== previewSequence.current) return
+        const bytes = new Uint8Array(decoded.data.byteLength)
+        bytes.set(decoded.data)
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }))
+        setTimelinePreview((previous) => {
+          if (previous) URL.revokeObjectURL(previous.url)
+          return { url, time, x }
+        })
+      } catch { /* Preview failures should not interrupt playback. */ }
+    }, 120)
+  }
+
+  const hideTimelinePreview = () => {
+    previewSequence.current += 1
+    if (previewTimeout.current !== null) window.clearTimeout(previewTimeout.current)
+    previewTimeout.current = null
+    setTimelinePreview((previous) => {
+      if (previous) URL.revokeObjectURL(previous.url)
+      return null
+    })
+  }
+
   const estimatedFrameIndex = Math.floor(currentTime * (video?.metadata.averageFps ?? 0))
   const indexedFrameCount = frameWindows.reduce((count, window) => count + window.timestamps.length, 0)
   const selectionLeft = duration ? inPoint / duration * 100 : 0
   const selectionWidth = duration ? (outPoint - inPoint) / duration * 100 : 0
+  const timelineMin = rangeZoom ? inPoint : 0
+  const timelineMax = rangeZoom ? outPoint : (duration || 1)
 
   const switchTab = (tab: 'player' | 'concat') => {
     if (tab === 'concat') videoRef.current?.pause()
@@ -361,6 +418,7 @@ function App() {
         {activeTab === 'player' && <button className="button primary" onClick={() => inputRef.current?.click()} disabled={Boolean(job)}>
           動画を開く
         </button>}
+        <button className="button" onClick={() => setSettingsOpen(true)}>設定</button>
         <input ref={inputRef} className="hidden" type="file" accept="video/mp4,.mp4" onChange={(e) => {
           void openFile(e.target.files?.[0])
           e.target.value = ''
@@ -401,17 +459,25 @@ function App() {
 
         <section className="control-panel" aria-disabled={!video}>
         <div className="timeline-wrap">
+          {timelinePreview && (
+            <div className="timeline-preview" style={{ left: `${timelinePreview.x}px` }}>
+              <img src={timelinePreview.url} alt="タイムラインのプレビュー" />
+              <span>{formatTime(timelinePreview.time, true)}</span>
+            </div>
+          )}
           <div className="selection-track" aria-hidden="true">
-            <span style={{ left: `${selectionLeft}%`, width: `${selectionWidth}%` }} />
+            <span style={{ left: `${rangeZoom ? 0 : selectionLeft}%`, width: `${rangeZoom ? 100 : selectionWidth}%` }} />
           </div>
           <input
             className="timeline"
             type="range"
-            min="0"
-            max={duration || 1}
+            min={timelineMin}
+            max={timelineMax}
             step="any"
             value={currentTime}
             onChange={(event) => seek(Number(event.target.value))}
+            onMouseMove={previewTimeline}
+            onMouseLeave={hideTimelinePreview}
             disabled={!video}
             aria-label="再生位置"
           />
@@ -428,11 +494,15 @@ function App() {
         </div>
 
         <div className="transport">
+          <button className="jump-button" onClick={() => jump(-60)} disabled={!video || Boolean(job)} title="1分戻る">−1分</button>
+          <button className="jump-button" onClick={() => jump(-10)} disabled={!video || Boolean(job)} title="10秒戻る">−10秒</button>
           <button className="icon-button" onClick={() => void stepFrame(-1)} disabled={!video || Boolean(job) || frameDecoding} title="前のフレーム (←)">|◀</button>
           <button className="play-button" onClick={togglePlay} disabled={!video || Boolean(job)} title="再生・一時停止 (Space)">
             {playing ? 'Ⅱ' : '▶'}
           </button>
           <button className="icon-button" onClick={() => void stepFrame(1)} disabled={!video || Boolean(job) || frameDecoding} title="次のフレーム (→)">▶|</button>
+          <button className="jump-button" onClick={() => jump(10)} disabled={!video || Boolean(job)} title="10秒進む">+10秒</button>
+          <button className="jump-button" onClick={() => jump(60)} disabled={!video || Boolean(job)} title="1分進む">+1分</button>
           <label className="speed-control">
             <span>速度</span>
             <select value={speed} onChange={(event) => changeSpeed(Number(event.target.value))} disabled={!video || Boolean(job)}>
@@ -458,6 +528,11 @@ function App() {
             <button className="time-chip" onClick={() => seek(outPoint)} disabled={!video}>{formatTime(outPoint, true)}</button>
           </div>
           <span className="range-duration">選択: {formatTime(Math.max(0, outPoint - inPoint), true)}</span>
+          <button
+            className={`button ${rangeZoom ? 'active-toggle' : ''}`}
+            onClick={() => { setRangeZoom((value) => !value); if (!rangeZoom && (currentTime < inPoint || currentTime > outPoint)) seek(inPoint) }}
+            disabled={!selectionValid || Boolean(job)}
+          >{rangeZoom ? '全体表示に戻す' : '選択区間を拡大表示'}</button>
           <div className="edit-actions">
             <button className="button" onClick={() => void runOperation('frame')} disabled={!video || Boolean(job)}>静止画を保存</button>
             <button className="button" onClick={() => void runOperation('extract')} disabled={!selectionValid || Boolean(job)}>区間を抽出</button>
@@ -484,6 +559,20 @@ function App() {
             <progress max="1" value={job.progress} />
             <div className="progress-value">{Math.round(job.progress * 100)}%</div>
             <button className="button" onClick={() => void window.videoPlay.cancelJob(job.jobId)}>キャンセル</button>
+          </div>
+        </div>
+      )}
+      {settingsOpen && (
+        <div className="modal-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) setSettingsOpen(false) }}>
+          <div className="settings-dialog" role="dialog" aria-modal="true" aria-label="設定">
+            <h2>設定</h2>
+            <label>ファイル保存先</label>
+            <div className="directory-value" title={outputDirectory}>{outputDirectory || '保存時に毎回選択'}</div>
+            <div className="settings-actions">
+              <button className="button" onClick={async () => { const value = await window.videoPlay.chooseOutputDirectory(); if (value) setOutputDirectory(value) }}>フォルダーを選択</button>
+              <button className="button" disabled={!outputDirectory} onClick={async () => { await window.videoPlay.clearOutputDirectory(); setOutputDirectory('') }}>毎回選択に戻す</button>
+              <button className="button primary" onClick={() => setSettingsOpen(false)}>閉じる</button>
+            </div>
           </div>
         </div>
       )}

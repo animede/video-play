@@ -16,6 +16,25 @@ import {
 } from './ffmpeg'
 
 const registeredVideos = new Map<string, VideoMetadata>()
+let outputDirectory = ''
+
+function settingsPath(): string {
+  return path.join(app.getPath('userData'), 'settings.json')
+}
+
+function loadSettings(): void {
+  try {
+    const settings = JSON.parse(fs.readFileSync(settingsPath(), 'utf8')) as { outputDirectory?: unknown }
+    if (typeof settings.outputDirectory === 'string' && fs.statSync(settings.outputDirectory).isDirectory()) {
+      outputDirectory = settings.outputDirectory
+    }
+  } catch { /* Missing or stale settings use the save dialog. */ }
+}
+
+async function saveSettings(): Promise<void> {
+  await fs.promises.mkdir(path.dirname(settingsPath()), { recursive: true })
+  await fs.promises.writeFile(settingsPath(), JSON.stringify({ outputDirectory }, null, 2), 'utf8')
+}
 
 function normalizeVideoPath(filePath: string): string {
   const resolved = path.resolve(filePath)
@@ -52,6 +71,14 @@ function validateRange(start: number, end: number, duration: number): void {
 }
 
 async function chooseOutput(defaultPath: string, filters: Electron.FileFilter[]): Promise<string | null> {
+  if (outputDirectory) {
+    const parsed = path.parse(path.join(outputDirectory, path.basename(defaultPath)))
+    let candidate = path.join(parsed.dir, `${parsed.name}${parsed.ext}`)
+    for (let suffix = 2; fs.existsSync(candidate); suffix += 1) {
+      candidate = path.join(parsed.dir, `${parsed.name}-${suffix}${parsed.ext}`)
+    }
+    return candidate
+  }
   const result = await dialog.showSaveDialog({ defaultPath, filters, properties: ['showOverwriteConfirmation'] })
   return result.canceled ? null : result.filePath
 }
@@ -103,6 +130,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  loadSettings()
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   createWindow()
   app.on('activate', () => {
@@ -200,3 +228,19 @@ ipcMain.handle('video:concatenate', async (event, request: ConcatRequest) => {
 })
 
 ipcMain.handle('video:cancel', (_event, jobId: string) => cancelJob(jobId))
+ipcMain.handle('settings:get-output-directory', () => outputDirectory)
+ipcMain.handle('settings:choose-output-directory', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'ファイル保存先を選択',
+    defaultPath: outputDirectory || app.getPath('videos'),
+    properties: ['openDirectory', 'createDirectory'],
+  })
+  if (result.canceled || !result.filePaths[0]) return null
+  outputDirectory = path.resolve(result.filePaths[0])
+  await saveSettings()
+  return outputDirectory
+})
+ipcMain.handle('settings:clear-output-directory', async () => {
+  outputDirectory = ''
+  await saveSettings()
+})

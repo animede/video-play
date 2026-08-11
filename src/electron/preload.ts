@@ -23,6 +23,15 @@ const api: VideoPlayApi = {
   concatenateVideos(request: ConcatRequest) {
     return ipcRenderer.invoke('video:concatenate', request)
   },
+  getOutputDirectory() {
+    return ipcRenderer.invoke('settings:get-output-directory')
+  },
+  chooseOutputDirectory() {
+    return ipcRenderer.invoke('settings:choose-output-directory')
+  },
+  clearOutputDirectory() {
+    return ipcRenderer.invoke('settings:clear-output-directory')
+  },
   cancelJob(jobId: string) {
     return ipcRenderer.invoke('video:cancel', jobId)
   },
