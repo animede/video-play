@@ -1,8 +1,6 @@
-# Video Player
+# Video-player
 
 WindowsとLinuxで動作する、MP4動画の再生・簡易編集用デスクトップアプリです。
-
-注: リポジトリ名は video-play ですが、アプリ表示名は現在 Video Play です。
 
 ## ダウンロード
 
@@ -14,7 +12,7 @@ WindowsとLinuxで動作する、MP4動画の再生・簡易編集用デスク�
 
 ## GUI見本
 
-GUIスクリーンショットを追加する場合は、docs/images/gui-sample.png を配置して次の形式で埋め込めます。
+再生・編集タブの画面例です。
 
 ![Video Player GUI見本](docs/images/gui-sample.png)
 
