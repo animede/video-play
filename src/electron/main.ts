@@ -101,6 +101,9 @@ async function executeJob(
 }
 
 function createWindow(): void {
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'icon.png')
+    : path.join(__dirname, '../../build/icon.png')
   const window = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -108,6 +111,7 @@ function createWindow(): void {
     minHeight: 560,
     backgroundColor: '#111318',
     title: 'Video Play',
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

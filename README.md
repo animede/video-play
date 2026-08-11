@@ -117,11 +117,30 @@ npm run build
 # Windows（NSISインストーラー）
 npm run dist:win
 
-# Linux（AppImage）
+# Linux（AppImageとdebパッケージ）
 npm run dist:linux
 ```
 
 成果物は`release/`に生成されます。Windows版はWindows環境、Linux版はLinux環境でビルド・動作確認してください。
+
+### Linuxでアイコンから起動する
+
+アプリ一覧へ登録してアイコンから起動する場合は、生成されたdebパッケージをインストールします。
+
+```bash
+cp "release/Video Play-0.1.0-Linux-amd64.deb" /tmp/video-play-0.1.0-amd64.deb
+sudo apt install /tmp/video-play-0.1.0-amd64.deb
+```
+
+ホームディレクトリを他ユーザーが参照できない環境では、`release`内のdebをAPTへ直接指定すると、`_apt`ユーザーからアクセスできないという通知が表示されます。これはパッケージ自体の権限エラーではありません。上記のように一度`/tmp`へコピーすると、APTのサンドボックスを保ったままインストールできます。
+
+インストール後、デスクトップ環境のアプリ一覧で「Video Play」を検索して起動できます。アンインストールする場合は`sudo apt remove video-play`を実行します。
+
+AppImage版はインストール不要です。ファイルマネージャーで実行権限を付けるか、次のコマンドを一度実行した後、`release`内のAppImageをダブルクリックして起動できます。
+
+```bash
+chmod +x "release/Video Play-0.1.0-Linux-x86_64.AppImage"
+```
 
 ## 対応範囲
 

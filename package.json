@@ -54,15 +54,31 @@
       "node_modules/ffprobe-static/**/*"
     ],
     "directories": {
+      "buildResources": "build",
       "output": "release"
     },
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
     "win": {
       "target": ["nsis"],
       "artifactName": "${productName}-${version}-Windows-${arch}.${ext}"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": ["AppImage", "deb"],
+      "icon": "build/icon.png",
       "category": "AudioVideo",
+      "maintainer": "Video Play contributors <noreply@videoplay.local>",
+      "desktop": {
+        "entry": {
+          "Name": "Video Play",
+          "Comment": "MP4動画の再生と簡易編集",
+          "StartupNotify": "true"
+        }
+      },
       "syncDesktopName": true,
       "artifactName": "${productName}-${version}-Linux-${arch}.${ext}"
     },
