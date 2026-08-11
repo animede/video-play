@@ -71,6 +71,36 @@ npm.cmd run dist:win
 
 「`npm`はコマンドレット、関数、スクリプトファイル、または実行可能なプログラムとして認識されません」と表示される場合は、Node.js 26.xがインストールされていることを確認し、PowerShellをすべて閉じてから開き直してください。
 
+### Windows側で再ビルドする手順
+
+すでにWindowsへリポジトリを取得済みの場合は、Video Playを終了してからプロジェクトフォルダをPowerShellで開き、以下を順番に実行します。Linux側で作成した`node_modules`やビルド成果物は持ち込まず、Windows側で依存パッケージをインストールしてください。
+
+```powershell
+# 1. 最新のソースを取得
+git switch main
+git pull --ff-only origin main
+
+# 2. Node.jsのバージョンを確認
+node --version
+npm.cmd --version
+
+# 3. package-lock.jsonに従ってWindows用依存パッケージを再インストール
+Remove-Item Env:NODE_ENV -ErrorAction SilentlyContinue
+Remove-Item Env:NPM_CONFIG_PRODUCTION -ErrorAction SilentlyContinue
+npm.cmd ci --include=dev
+
+# 4. 型チェックとテスト
+npm.cmd run typecheck
+npm.cmd test
+
+# 5. Windows用NSISインストーラーを生成
+npm.cmd run dist:win
+```
+
+生成されたインストーラーは、プロジェクト内の`release`フォルダにある`Video Play-<バージョン>-Windows-<アーキテクチャ>.exe`です。再ビルド前の`release`フォルダを削除する必要はありませんが、同じバージョンの成果物は置き換えられます。
+
+ローカルに未コミットの変更があると`git pull --ff-only`が失敗する場合があります。その場合は変更をコミットまたは退避してから再実行してください。`npm.cmd ci`でファイル使用中のエラーが出る場合は、起動中のVideo Play、開発サーバー、Electronを終了してから実行します。
+
 ## 検証
 
 ```bash
