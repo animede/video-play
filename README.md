@@ -5,10 +5,10 @@ WindowsとLinuxで動作する、MP4動画の再生・簡易編集用デスク�
 ## ダウンロード
 
 - [最新版リリース](https://github.com/animede/video-play/releases/latest)
-- [v0.1.0 リリースページ](https://github.com/animede/video-play/releases/tag/v0.1.0)
-- [Windows (v0.1.0) 直接ダウンロード](https://github.com/animede/video-play/releases/download/v0.1.0/Video.Play-0.1.0-Windows-x64.exe)
-- [Linux AppImage (v0.1.0) 直接ダウンロード](https://github.com/animede/video-play/releases/download/v0.1.0/Video.Play-0.1.0-Linux-x86_64.AppImage)
-- [Linux deb (v0.1.0) 直接ダウンロード](https://github.com/animede/video-play/releases/download/v0.1.0/Video.Play-0.1.0-Linux-amd64.deb)
+- [v0.2.0 リリースページ](https://github.com/animede/video-play/releases/tag/v0.2.0)
+- [Windows (v0.2.0) 直接ダウンロード](https://github.com/animede/video-play/releases/download/v0.2.0/Video-player-0.2.0-Windows-x64.exe)
+- [Linux AppImage (v0.2.0) 直接ダウンロード](https://github.com/animede/video-play/releases/download/v0.2.0/Video-player-0.2.0-Linux-x86_64.AppImage)
+- [Linux deb (v0.2.0) 直接ダウンロード](https://github.com/animede/video-play/releases/download/v0.2.0/Video-player-0.2.0-Linux-amd64.deb)
 
 ## GUI見本
 
@@ -215,8 +215,8 @@ npm run dist:linux
 アプリ一覧へ登録してアイコンから起動する場合は、生成されたdebパッケージをインストールします。
 
 ```bash
-cp "release/Video Play-0.1.0-Linux-amd64.deb" /tmp/video-play-0.1.0-amd64.deb
-sudo apt install /tmp/video-play-0.1.0-amd64.deb
+cp "release/Video-player-0.2.0-Linux-amd64.deb" /tmp/video-player-0.2.0-amd64.deb
+sudo apt install /tmp/video-player-0.2.0-amd64.deb
 ```
 
 ホームディレクトリを他ユーザーが参照できない環境では、`release`内のdebをAPTへ直接指定すると、`_apt`ユーザーからアクセスできないという通知が表示されます。これはパッケージ自体の権限エラーではありません。上記のように一度`/tmp`へコピーすると、APTのサンドボックスを保ったままインストールできます。
@@ -226,7 +226,7 @@ sudo apt install /tmp/video-play-0.1.0-amd64.deb
 AppImage版はインストール不要です。ファイルマネージャーで実行権限を付けるか、次のコマンドを一度実行した後、`release`内のAppImageをダブルクリックして起動できます。
 
 ```bash
-chmod +x "release/Video Play-0.1.0-Linux-x86_64.AppImage"
+chmod +x "release/Video-player-0.2.0-Linux-x86_64.AppImage"
 ```
 
 ## 対応範囲
