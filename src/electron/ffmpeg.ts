@@ -2,7 +2,7 @@ import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child
 import fs from 'node:fs'
 import path from 'node:path'
 import type { WebContents } from 'electron'
-import type { FrameWindow, OperationProgress, VideoMetadata } from '../shared/types'
+import type { EncodingQuality, FrameWindow, OperationProgress, TimeRange, VideoEncoder, VideoMetadata } from '../shared/types'
 
 interface FfprobeOutput {
   streams?: Array<{
@@ -32,6 +32,7 @@ const runningJobs = new Map<string, RunningJob>()
 const FRAME_WINDOW_SECONDS = 30
 const MAX_CACHED_WINDOWS = 12
 const timestampCache = new Map<string, FrameWindow>()
+let encoderDetection: Promise<VideoEncoder[]> | undefined
 
 function unpackedExecutable(executable: string): string {
   return executable.replace('app.asar', 'app.asar.unpacked')
@@ -261,10 +262,54 @@ export function frameArgs(source: string, time: number, output: string): string[
   return ['-ss', time.toFixed(6), '-i', source, '-map', '0:v:0', '-frames:v', '1', '-y', output]
 }
 
-const videoEncoding = ['-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p']
+export function videoEncodingArgs(encoder: VideoEncoder = 'cpu', quality: EncodingQuality = 'standard'): string[] {
+  if (encoder === 'nvenc') {
+    const settings = { fast: ['p2', '23'], standard: ['p4', '20'], quality: ['p6', '18'] }[quality]
+    return ['-c:v', 'h264_nvenc', '-preset', settings[0], '-rc', 'vbr', '-cq', settings[1], '-b:v', '0', '-pix_fmt', 'yuv420p']
+  }
+  if (encoder === 'qsv') {
+    const settings = { fast: ['veryfast', '23'], standard: ['medium', '20'], quality: ['slow', '18'] }[quality]
+    return ['-c:v', 'h264_qsv', '-preset', settings[0], '-global_quality', settings[1], '-pix_fmt', 'nv12']
+  }
+  if (encoder === 'amf') {
+    const settings = { fast: ['speed', '23'], standard: ['balanced', '20'], quality: ['quality', '18'] }[quality]
+    return ['-c:v', 'h264_amf', '-quality', settings[0], '-rc', 'cqp', '-qp_i', settings[1], '-qp_p', settings[1], '-pix_fmt', 'yuv420p']
+  }
+  const settings = { fast: ['ultrafast', '23'], standard: ['veryfast', '20'], quality: ['medium', '18'] }[quality]
+  return ['-c:v', 'libx264', '-preset', settings[0], '-crf', settings[1], '-pix_fmt', 'yuv420p']
+}
+
+export function detectVideoEncoders(): Promise<VideoEncoder[]> {
+  if (encoderDetection) return encoderDetection
+  encoderDetection = (async () => {
+    const output = await exec(resolveFfmpeg(), ['-hide_banner', '-encoders'])
+    const candidates: Array<[VideoEncoder, string]> = [
+      ['nvenc', 'h264_nvenc'],
+      ['qsv', 'h264_qsv'],
+      ['amf', 'h264_amf'],
+    ]
+    const available: VideoEncoder[] = []
+    for (const [encoder, ffmpegName] of candidates) {
+      if (!output.includes(ffmpegName)) continue
+      try {
+        await exec(resolveFfmpeg(), [
+          '-hide_banner', '-loglevel', 'error',
+          '-f', 'lavfi', '-i', 'color=size=64x64:rate=1',
+          '-frames:v', '1', ...videoEncodingArgs(encoder, 'fast'),
+          '-f', 'null', '-',
+        ])
+        available.push(encoder)
+      } catch { /* Listed encoders can still be unavailable without a driver/device. */ }
+    }
+    available.push('cpu')
+    return available
+  })()
+  return encoderDetection
+}
+
 const audioEncoding = ['-c:a', 'aac', '-b:a', '192k']
 
-export function extractArgs(source: string, start: number, end: number, hasAudio: boolean, output: string): string[] {
+export function extractArgs(source: string, start: number, end: number, hasAudio: boolean, output: string, encoder: VideoEncoder = 'cpu', quality: EncodingQuality = 'standard'): string[] {
   const args = [
     '-ss', start.toFixed(6),
     '-i', source,
@@ -273,7 +318,7 @@ export function extractArgs(source: string, start: number, end: number, hasAudio
   ]
   if (hasAudio) args.push('-map', '0:a:0?')
   // Preserve presentation timestamps when the input has a variable frame rate.
-  args.push('-fps_mode', 'vfr', ...videoEncoding)
+  args.push('-fps_mode', 'vfr', ...videoEncodingArgs(encoder, quality))
   if (hasAudio) args.push(...audioEncoding)
   args.push('-movflags', '+faststart', '-y', output)
   return args
@@ -286,30 +331,60 @@ export function removeArgs(
   duration: number,
   hasAudio: boolean,
   output: string,
+  encoder: VideoEncoder = 'cpu',
+  quality: EncodingQuality = 'standard',
 ): string[] {
-  if (start <= 0.000001) return extractArgs(source, end, duration, hasAudio, output)
-  if (end >= duration - 0.000001) return extractArgs(source, 0, start, hasAudio, output)
+  return removeRangesArgs(source, [{ start, end }], duration, hasAudio, output, encoder, quality)
+}
 
-  const videoFilter =
-    `[0:v:0]trim=start=0:end=${start.toFixed(6)},setpts=PTS-STARTPTS[v0];` +
-    `[0:v:0]trim=start=${end.toFixed(6)}:end=${duration.toFixed(6)},setpts=PTS-STARTPTS[v1];`
-  const audioFilter = hasAudio
-    ? `[0:a:0]atrim=start=0:end=${start.toFixed(6)},asetpts=PTS-STARTPTS[a0];` +
-      `[0:a:0]atrim=start=${end.toFixed(6)}:end=${duration.toFixed(6)},asetpts=PTS-STARTPTS[a1];` +
-      '[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]'
-    : '[v0][v1]concat=n=2:v=1:a=0[v]'
+export function removeRangesArgs(
+  source: string,
+  ranges: TimeRange[],
+  duration: number,
+  hasAudio: boolean,
+  output: string,
+  encoder: VideoEncoder = 'cpu',
+  quality: EncodingQuality = 'standard',
+): string[] {
+  const kept: TimeRange[] = []
+  let cursor = 0
+  for (const range of ranges) {
+    if (range.start > cursor + 0.000001) kept.push({ start: cursor, end: range.start })
+    cursor = Math.max(cursor, range.end)
+  }
+  if (cursor < duration - 0.000001) kept.push({ start: cursor, end: duration })
+  if (kept.length === 0) throw new Error('動画全体を削除することはできません。')
+  if (kept.length === 1) return extractArgs(source, kept[0].start, kept[0].end, hasAudio, output, encoder, quality)
 
-  const args = ['-i', source, '-filter_complex', videoFilter + audioFilter, '-map', '[v]']
+  // Open each retained section as a separately-seeked input. This avoids
+  // decoding long deleted sections before joining the result in one encode.
+  const args = kept.flatMap((range) => [
+    '-ss', range.start.toFixed(6),
+    '-t', (range.end - range.start).toFixed(6),
+    '-i', source,
+  ])
+  const filters: string[] = []
+  const concatInputs: string[] = []
+  kept.forEach((_range, index) => {
+    filters.push(`[${index}:v:0]setpts=PTS-STARTPTS[v${index}]`)
+    concatInputs.push(`[v${index}]`)
+    if (hasAudio) {
+      filters.push(`[${index}:a:0]asetpts=PTS-STARTPTS[a${index}]`)
+      concatInputs.push(`[a${index}]`)
+    }
+  })
+  filters.push(`${concatInputs.join('')}concat=n=${kept.length}:v=1:a=${hasAudio ? 1 : 0}[v]${hasAudio ? '[a]' : ''}`)
+  args.push('-filter_complex', filters.join(';'), '-map', '[v]')
   if (hasAudio) args.push('-map', '[a]')
   // concat filters do not expose a fixed input rate; without this option FFmpeg
   // can silently coerce the result to its 25 fps fallback.
-  args.push('-fps_mode', 'vfr', ...videoEncoding)
+  args.push('-fps_mode', 'vfr', ...videoEncodingArgs(encoder, quality))
   if (hasAudio) args.push(...audioEncoding)
   args.push('-movflags', '+faststart', '-y', output)
   return args
 }
 
-export function concatenateArgs(inputs: ConcatInput[], output: string): string[] {
+export function concatenateArgs(inputs: ConcatInput[], output: string, encoder: VideoEncoder = 'cpu', quality: EncodingQuality = 'standard'): string[] {
   if (inputs.length < 2) throw new Error('連結する動画を2本以上指定してください。')
   const first = inputs[0].metadata
   const width = Math.max(2, Math.floor(first.width / 2) * 2)
@@ -341,7 +416,7 @@ export function concatenateArgs(inputs: ConcatInput[], output: string): string[]
   filters.push(`${concatInputs.join('')}concat=n=${inputs.length}:v=1:a=1[v][a]`)
 
   args.push('-filter_complex', filters.join(';'), '-map', '[v]', '-map', '[a]')
-  args.push('-r', fps, ...videoEncoding, ...audioEncoding, '-movflags', '+faststart', '-y', output)
+  args.push('-r', fps, ...videoEncodingArgs(encoder, quality), ...audioEncoding, '-movflags', '+faststart', '-y', output)
   return args
 }
 

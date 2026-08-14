@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { FrameWindow, OperationProgress, RegisteredVideo } from '../shared/types'
+import type { EncodingPreference, EncodingQuality, FrameWindow, OperationProgress, RegisteredVideo, TimeRange, VideoEncoder } from '../shared/types'
 import ConcatPanel from './ConcatPanel'
 import { formatTime, readableError } from './utils'
 
@@ -50,6 +50,12 @@ function App() {
   const [timelinePreview, setTimelinePreview] = useState<TimelinePreview | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [outputDirectory, setOutputDirectory] = useState('')
+  const [removalRanges, setRemovalRanges] = useState<TimeRange[]>([])
+  const [encodingPreference, setEncodingPreference] = useState<EncodingPreference>(() =>
+    (localStorage.getItem('encodingPreference') as EncodingPreference | null) ?? 'auto')
+  const [encodingQuality, setEncodingQuality] = useState<EncodingQuality>(() =>
+    (localStorage.getItem('encodingQuality') as EncodingQuality | null) ?? 'standard')
+  const [availableEncoders, setAvailableEncoders] = useState<VideoEncoder[]>(['cpu'])
   const previewSequence = useRef(0)
   const previewTimeout = useRef<number | null>(null)
 
@@ -62,6 +68,15 @@ function App() {
   }), [])
 
   useEffect(() => { void window.videoPlay.getOutputDirectory().then(setOutputDirectory) }, [])
+  useEffect(() => {
+    void window.videoPlay.getEncodingCapabilities().then(({ available }) => {
+      setAvailableEncoders(available)
+      if (encodingPreference !== 'auto' && !available.includes(encodingPreference)) {
+        setEncodingPreference('auto')
+        localStorage.setItem('encodingPreference', 'auto')
+      }
+    })
+  }, [])
 
   useEffect(() => () => {
     if (previewTimeout.current !== null) window.clearTimeout(previewTimeout.current)
@@ -173,6 +188,7 @@ function App() {
       setInPoint(0)
       setOutPoint(registered.metadata.duration)
       setRangeZoom(false)
+      setRemovalRanges([])
       frameWindowsRef.current = []
       inflightFrameWindows.current.clear()
       setFrameWindows([])
@@ -327,8 +343,8 @@ function App() {
       const result = kind === 'frame'
         ? await window.videoPlay.saveFrame({ jobId, sourcePath: video.path, time: currentTime })
         : kind === 'extract'
-          ? await window.videoPlay.extractRange({ jobId, sourcePath: video.path, start: inPoint, end: outPoint })
-          : await window.videoPlay.removeRange({ jobId, sourcePath: video.path, start: inPoint, end: outPoint })
+          ? await window.videoPlay.extractRange({ jobId, sourcePath: video.path, start: inPoint, end: outPoint, encoder: encodingPreference, quality: encodingQuality })
+          : await window.videoPlay.removeRanges({ jobId, sourcePath: video.path, ranges: removalRanges, encoder: encodingPreference, quality: encodingQuality })
       if (!result.cancelled && result.outputPath) setNotice(`保存しました: ${result.outputPath}`)
     } catch (reason) {
       setError(readableError(reason))
@@ -379,12 +395,26 @@ function App() {
     })
   }
 
+  const addRemovalRange = () => {
+    if (!selectionValid) return
+    const sorted = [...removalRanges, { start: inPoint, end: outPoint }].sort((left, right) => left.start - right.start)
+    const merged: TimeRange[] = []
+    for (const range of sorted) {
+      const previous = merged.at(-1)
+      if (previous && range.start <= previous.end + 0.001) previous.end = Math.max(previous.end, range.end)
+      else merged.push({ ...range })
+    }
+    setRemovalRanges(merged)
+    setNotice(merged.length < sorted.length ? '重複または隣接する削除区間を統合しました。' : '削除区間へ追加しました。')
+  }
+
   const estimatedFrameIndex = Math.floor(currentTime * (video?.metadata.averageFps ?? 0))
   const indexedFrameCount = frameWindows.reduce((count, window) => count + window.timestamps.length, 0)
   const selectionLeft = duration ? inPoint / duration * 100 : 0
   const selectionWidth = duration ? (outPoint - inPoint) / duration * 100 : 0
   const timelineMin = rangeZoom ? inPoint : 0
   const timelineMax = rangeZoom ? outPoint : (duration || 1)
+  const removedDuration = removalRanges.reduce((sum, range) => sum + range.end - range.start, 0)
 
   const switchTab = (tab: 'player' | 'concat') => {
     if (tab === 'concat') videoRef.current?.pause()
@@ -468,6 +498,17 @@ function App() {
           <div className="selection-track" aria-hidden="true">
             <span style={{ left: `${rangeZoom ? 0 : selectionLeft}%`, width: `${rangeZoom ? 100 : selectionWidth}%` }} />
           </div>
+          <div className="removal-track" aria-hidden="true">
+            {removalRanges.map((range) => {
+              const visibleStart = Math.max(range.start, timelineMin)
+              const visibleEnd = Math.min(range.end, timelineMax)
+              if (visibleEnd <= visibleStart) return null
+              return <span key={`${range.start}-${range.end}`} style={{
+                left: `${(visibleStart - timelineMin) / (timelineMax - timelineMin) * 100}%`,
+                width: `${(visibleEnd - visibleStart) / (timelineMax - timelineMin) * 100}%`,
+              }} />
+            })}
+          </div>
           <input
             className="timeline"
             type="range"
@@ -533,16 +574,35 @@ function App() {
             onClick={() => { setRangeZoom((value) => !value); if (!rangeZoom && (currentTime < inPoint || currentTime > outPoint)) seek(inPoint) }}
             disabled={!selectionValid || Boolean(job)}
           >{rangeZoom ? '全体表示に戻す' : '選択区間を拡大表示'}</button>
+          <button className="button danger" onClick={addRemovalRange} disabled={!selectionValid || Boolean(job)}>削除区間へ追加</button>
           <div className="edit-actions">
             <button className="button" onClick={() => void runOperation('frame')} disabled={!video || Boolean(job)}>静止画を保存</button>
             <button className="button" onClick={() => void runOperation('extract')} disabled={!selectionValid || Boolean(job)}>区間を抽出</button>
-            <button className="button danger" onClick={() => void runOperation('remove')} disabled={!selectionValid || Boolean(job)}>区間を削除</button>
           </div>
         </div>
+        {removalRanges.length > 0 && (
+          <div className="removal-panel">
+            <div className="removal-heading">
+              <strong>削除する区間</strong>
+              <span>{removalRanges.length}件 · 合計 {formatTime(removedDuration, true)} · 出力 {formatTime(Math.max(0, duration - removedDuration), true)}</span>
+              <button className="button" onClick={() => setRemovalRanges([])} disabled={Boolean(job)}>すべて解除</button>
+              <button className="button danger" onClick={() => void runOperation('remove')} disabled={Boolean(job)}>指定区間を一括削除</button>
+            </div>
+            <div className="removal-list">
+              {removalRanges.map((range, index) => (
+                <div className="removal-item" key={`${range.start}-${range.end}`}>
+                  <button onClick={() => seek(range.start)} title="区間の先頭へ移動">{index + 1}. {formatTime(range.start, true)} → {formatTime(range.end, true)}</button>
+                  <span>{formatTime(range.end - range.start, true)}</span>
+                  <button className="remove-range" onClick={() => setRemovalRanges((current) => current.filter((_item, itemIndex) => itemIndex !== index))} aria-label={`${index + 1}番目の削除区間を解除`}>×</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         </section>
       </div>
 
-      <ConcatPanel hidden={activeTab !== 'concat'} />
+      <ConcatPanel hidden={activeTab !== 'concat'} encodingPreference={encodingPreference} encodingQuality={encodingQuality} />
 
       {(error || notice) && (
         <div className={`toast ${error ? 'error' : ''}`} role="status">
@@ -571,8 +631,37 @@ function App() {
             <div className="settings-actions">
               <button className="button" onClick={async () => { const value = await window.videoPlay.chooseOutputDirectory(); if (value) setOutputDirectory(value) }}>フォルダーを選択</button>
               <button className="button" disabled={!outputDirectory} onClick={async () => { await window.videoPlay.clearOutputDirectory(); setOutputDirectory('') }}>毎回選択に戻す</button>
-              <button className="button primary" onClick={() => setSettingsOpen(false)}>閉じる</button>
             </div>
+            <div className="encoding-settings">
+              <label>
+                <span>エンコード方式</span>
+                <select value={encodingPreference} onChange={(event) => {
+                  const value = event.target.value as EncodingPreference
+                  setEncodingPreference(value)
+                  localStorage.setItem('encodingPreference', value)
+                }}>
+                  <option value="auto">自動（GPU優先）</option>
+                  <option value="cpu">CPU（libx264）</option>
+                  {availableEncoders.includes('nvenc') && <option value="nvenc">NVIDIA NVENC</option>}
+                  {availableEncoders.includes('qsv') && <option value="qsv">Intel Quick Sync</option>}
+                  {availableEncoders.includes('amf') && <option value="amf">AMD AMF</option>}
+                </select>
+              </label>
+              <label>
+                <span>品質</span>
+                <select value={encodingQuality} onChange={(event) => {
+                  const value = event.target.value as EncodingQuality
+                  setEncodingQuality(value)
+                  localStorage.setItem('encodingQuality', value)
+                }}>
+                  <option value="fast">高速</option>
+                  <option value="standard">標準（推奨）</option>
+                  <option value="quality">高画質</option>
+                </select>
+              </label>
+              <p>利用可能: {availableEncoders.map((encoder) => ({ cpu: 'CPU', nvenc: 'NVIDIA NVENC', qsv: 'Intel Quick Sync', amf: 'AMD AMF' })[encoder]).join(' / ')}</p>
+            </div>
+            <div className="settings-actions"><button className="button primary" onClick={() => setSettingsOpen(false)}>閉じる</button></div>
           </div>
         </div>
       )}

@@ -23,10 +23,12 @@ WindowsとLinuxで動作する、MP4動画の再生・簡易編集用デスク�
 - 前後の正確なコマ送り（周辺PTSをオンデマンド解析し、停止中はFFmpegで対象フレームを表示）
 - 表示中フレームのPNG/JPEG保存
 - IN点・OUT点を使った区間抽出
-- 指定区間を除去した新しいMP4の生成
+- 複数の削除区間を指定し、一度の処理で除去した新しいMP4を生成
 - 複数MP4のドロップ順連結とサムネイル一覧
 - ウインドウに合わせたアスペクト比維持リサイズ
 - 編集進捗表示とキャンセル
+- GPUエンコーダー（NVIDIA NVENC・Intel Quick Sync・AMD AMF）の自動検出とCPUフォールバック
+- 高速・標準・高画質のエンコード品質設定
 
 編集結果は常に新しいファイルへ保存し、元動画は変更しません。
 
@@ -35,6 +37,29 @@ WindowsとLinuxで動作する、MP4動画の再生・簡易編集用デスク�
 コマ送り時は解析済みの正確なPTSを使い、FFmpegが対象と前後各2フレームを1プロセスで高品質JPEGへデコードして動画表示の上に重ねます。表示用画像は最大12フレームのLRUキャッシュへ保持するため、連続移動や往復ではFFmpegの再実行を抑えます。周辺PTSが未解析の場合は解析完了を待ち、平均FPSによる推定移動は行いません。再生を再開すると通常のストリーミング再生へ戻ります。静止画ファイルとして保存する場合は従来どおりPNG/JPEGを選択できます。
 
 「動画連結」タブでは、複数のMP4をドロップするとサムネイルがドロップ順に表示されます。「すべての動画を連結」を押すと、先頭動画の解像度とFPSへ揃えてH.264/AACのMP4を生成します。縦横比が異なる動画には黒帯を追加し、音声のない動画には無音を補って同期を維持します。
+
+## エンコード高速化の仕様
+
+区間抽出、複数区間削除、動画連結では、設定画面の「エンコード方式」と「品質」を使用します。初期設定の「自動（GPU優先）」では、FFmpegにエンコーダー名が存在するだけでなく、64×64ピクセルの短い試験エンコードに成功した方式だけを利用可能と判定します。
+
+自動選択の優先順位は次のとおりです。
+
+1. NVIDIA NVENC（`h264_nvenc`）
+2. Intel Quick Sync（`h264_qsv`）
+3. AMD AMF（`h264_amf`）
+4. CPU（`libx264`）
+
+GPUがない場合、対応ドライバーがない場合、または同梱FFmpegがGPUエンコーダーを含まない場合は、自動的にCPUを使用します。GPUが検出後の本処理で失敗した場合も、不完全な出力ファイルを削除してCPU処理へフォールバックします。
+
+品質設定とCPU使用時の設定は次のとおりです。GPU使用時にも、それぞれに相当する速度・品質設定を適用します。
+
+| 品質 | CPU設定 | 用途 |
+| --- | --- | --- |
+| 高速 | `libx264 / ultrafast / CRF 23` | 処理時間を最優先 |
+| 標準（推奨） | `libx264 / veryfast / CRF 20` | 速度と画質のバランス |
+| 高画質 | `libx264 / medium / CRF 18` | 画質を優先する従来相当の設定 |
+
+この高速化は、指定フレームの位置を維持する再エンコード方式です。再エンコードを行わないストリームコピー方式ではないため、処理後の映像はH.264、音声はAACになります。複数区間削除では、残す区間だけを個別にシークして一度の処理で連結し、長い削除区間を不要にデコードしない構成です。
 
 ## 必要環境
 
@@ -114,6 +139,54 @@ npm.cmd run dist:win
 生成されたインストーラーは、プロジェクト内の`release`フォルダにある`Video-player-<バージョン>-Windows-<アーキテクチャ>.exe`です。再ビルド前の`release`フォルダを削除する必要はありませんが、同じバージョンの成果物は置き換えられます。
 
 ローカルに未コミットの変更があると`git pull --ff-only`が失敗する場合があります。その場合は変更をコミットまたは退避してから再実行してください。`npm.cmd ci`でファイル使用中のエラーが出る場合は、起動中のVideo-player、開発サーバー、Electronを終了してから実行します。
+
+### WindowsへGPU対応FFmpegをインストールする
+
+`ffmpeg-static`が提供するWindows用FFmpegにGPUエンコーダーが含まれていない環境では、NVIDIA GPUがあり`nvidia-smi`が動作していても、Video-playerにはCPUだけが表示されます。`ffmpeg.exe -version`に`ESSENTIAL`と表示され、次の確認で何も表示されない場合が該当します。
+
+```powershell
+ffmpeg.exe -hide_banner -encoders 2>&1 |
+  Select-String "h264_nvenc|h264_qsv|h264_amf"
+```
+
+Windows Package ManagerでGyan FFmpeg Essentials版が入っている場合は削除し、Full版をインストールします。
+
+```powershell
+winget list FFmpeg
+winget uninstall --exact --id Gyan.FFmpeg.Essentials
+winget install --exact --id Gyan.FFmpeg
+```
+
+Essentials版がインストールされていなければ、アンインストールコマンドの失敗は問題ありません。インストール後はPowerShellをすべて閉じ、新しいPowerShellで使用される実行ファイルとGPUエンコーダーを確認します。
+
+```powershell
+ffmpeg.exe -version
+(Get-Command ffmpeg.exe).Source
+ffmpeg.exe -hide_banner -encoders 2>&1 |
+  Select-String "h264_nvenc|h264_qsv|h264_amf"
+```
+
+古いFFmpegが優先される場合は、候補をすべて確認します。
+
+```powershell
+Get-Command ffmpeg.exe -All | Select-Object Source
+```
+
+開発版で一時的に試す場合は、Full版FFmpegのパスを現在のPowerShellへ設定してから起動します。この設定はPowerShellを閉じると解除されます。
+
+```powershell
+$env:VIDEO_PLAY_FFMPEG = (Get-Command ffmpeg.exe).Source
+npm.cmd run dev
+```
+
+インストール版をアプリアイコンから起動するときも使用する場合は、ユーザー環境変数として保存します。設定後はWindowsから一度サインアウトして再度サインインし、Video-playerを起動してください。
+
+```powershell
+$ffmpegPath = (Get-Command ffmpeg.exe).Source
+[Environment]::SetEnvironmentVariable("VIDEO_PLAY_FFMPEG", $ffmpegPath, "User")
+```
+
+Video-playerの設定画面に「NVIDIA NVENC」「Intel Quick Sync」「AMD AMF」など、試験エンコードに成功した方式が表示されれば設定完了です。NVIDIAを使う場合は「自動（GPU優先）」または「NVIDIA NVENC」を選び、Windowsのタスクマネージャーにある「パフォーマンス」→「GPU」→「Video Encode」で動作を確認できます。
 
 ## 検証
 

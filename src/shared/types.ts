@@ -37,11 +37,35 @@ export interface OperationResult {
   outputPath?: string
 }
 
-export interface EditRequest {
+export type VideoEncoder = 'cpu' | 'nvenc' | 'qsv' | 'amf'
+export type EncodingPreference = 'auto' | VideoEncoder
+export type EncodingQuality = 'fast' | 'standard' | 'quality'
+
+export interface EncodingOptions {
+  encoder?: EncodingPreference
+  quality?: EncodingQuality
+}
+
+export interface EncodingCapabilities {
+  available: VideoEncoder[]
+}
+
+export interface EditRequest extends EncodingOptions {
   jobId: string
   sourcePath: string
   start: number
   end: number
+}
+
+export interface TimeRange {
+  start: number
+  end: number
+}
+
+export interface RemoveRangesRequest extends EncodingOptions {
+  jobId: string
+  sourcePath: string
+  ranges: TimeRange[]
 }
 
 export interface FrameRequest {
@@ -50,7 +74,7 @@ export interface FrameRequest {
   time: number
 }
 
-export interface ConcatRequest {
+export interface ConcatRequest extends EncodingOptions {
   jobId: string
   sourcePaths: string[]
 }
@@ -61,11 +85,12 @@ export interface VideoPlayApi {
   decodeFrames(sourcePath: string, times: number[]): Promise<DecodedFrame[]>
   saveFrame(request: FrameRequest): Promise<OperationResult>
   extractRange(request: EditRequest): Promise<OperationResult>
-  removeRange(request: EditRequest): Promise<OperationResult>
+  removeRanges(request: RemoveRangesRequest): Promise<OperationResult>
   concatenateVideos(request: ConcatRequest): Promise<OperationResult>
   getOutputDirectory(): Promise<string>
   chooseOutputDirectory(): Promise<string | null>
   clearOutputDirectory(): Promise<void>
+  getEncodingCapabilities(): Promise<EncodingCapabilities>
   cancelJob(jobId: string): Promise<void>
   onProgress(callback: (progress: OperationProgress) => void): () => void
 }

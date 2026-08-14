@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { concatenateArgs, extractArgs, frameArgs, removeArgs } from './ffmpeg'
+import { concatenateArgs, extractArgs, frameArgs, removeArgs, removeRangesArgs, videoEncodingArgs } from './ffmpeg'
 import type { VideoMetadata } from '../shared/types'
 
 const metadata = (overrides: Partial<VideoMetadata> = {}): VideoMetadata => ({
@@ -15,6 +15,17 @@ const metadata = (overrides: Partial<VideoMetadata> = {}): VideoMetadata => ({
 })
 
 describe('FFmpeg argument construction', () => {
+  it('uses a faster balanced CPU profile by default', () => {
+    expect(videoEncodingArgs()).toEqual([
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+    ])
+  })
+
+  it('builds hardware encoder profiles', () => {
+    expect(videoEncodingArgs('nvenc', 'standard')).toContain('h264_nvenc')
+    expect(videoEncodingArgs('qsv', 'fast')).toContain('h264_qsv')
+    expect(videoEncodingArgs('amf', 'quality')).toContain('h264_amf')
+  })
   it('does not invoke a shell for file paths', () => {
     const args = frameArgs('/tmp/日本語 video.mp4', 1.25, '/tmp/frame.png')
     expect(args).toContain('/tmp/日本語 video.mp4')
@@ -29,10 +40,22 @@ describe('FFmpeg argument construction', () => {
   it('concatenates both sides for a middle removal', () => {
     const args = removeArgs('in.mp4', 2, 4, 10, true, 'out.mp4')
     const filter = args[args.indexOf('-filter_complex') + 1]
-    expect(filter).toContain('trim=start=0:end=2.000000')
-    expect(filter).toContain('trim=start=4.000000:end=10.000000')
+    expect(args.filter((argument) => argument === 'in.mp4')).toHaveLength(2)
+    expect(args).toContain('4.000000')
     expect(filter).toContain('concat=n=2:v=1:a=1')
     expect(args).toContain('vfr')
+  })
+
+  it('keeps and concatenates every gap around multiple removal ranges', () => {
+    const args = removeRangesArgs('in.mp4', [
+      { start: 2, end: 4 },
+      { start: 6, end: 7 },
+    ], 10, true, 'out.mp4')
+    const filter = args[args.indexOf('-filter_complex') + 1]
+    expect(args.filter((argument) => argument === 'in.mp4')).toHaveLength(3)
+    expect(filter).toContain('concat=n=3:v=1:a=1')
+    expect(filter).toContain('[0:v:0]setpts=PTS-STARTPTS[v0]')
+    expect(filter).toContain('[2:a:0]asetpts=PTS-STARTPTS[a2]')
   })
 
   it('uses a single extraction when removing from the beginning', () => {

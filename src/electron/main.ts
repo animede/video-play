@@ -1,17 +1,18 @@
 import { app, BrowserWindow, dialog, ipcMain, session } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { ConcatRequest, EditRequest, FrameRequest, RegisteredVideo, VideoMetadata } from '../shared/types'
+import type { ConcatRequest, EditRequest, EncodingPreference, EncodingQuality, FrameRequest, RegisteredVideo, RemoveRangesRequest, TimeRange, VideoEncoder, VideoMetadata } from '../shared/types'
 import {
   cancelJob,
   concatenateArgs,
   decodeFramesJpeg,
   defaultOutputPath,
+  detectVideoEncoders,
   extractArgs,
   frameArgs,
   getFrameWindow,
   probeVideo,
-  removeArgs,
+  removeRangesArgs,
   runFfmpeg,
 } from './ffmpeg'
 
@@ -70,6 +71,23 @@ function validateRange(start: number, end: number, duration: number): void {
   }
 }
 
+function normalizeRanges(ranges: TimeRange[], duration: number): TimeRange[] {
+  if (!Array.isArray(ranges) || ranges.length < 1 || ranges.length > 100) {
+    throw new Error('削除区間を1件以上100件以下で指定してください。')
+  }
+  const sorted = ranges.map(({ start, end }) => {
+    validateRange(start, end, duration)
+    return { start, end }
+  }).sort((left, right) => left.start - right.start)
+  const merged: TimeRange[] = []
+  for (const range of sorted) {
+    const previous = merged.at(-1)
+    if (previous && range.start <= previous.end + 0.001) previous.end = Math.max(previous.end, range.end)
+    else merged.push({ ...range })
+  }
+  return merged
+}
+
 async function chooseOutput(defaultPath: string, filters: Electron.FileFilter[]): Promise<string | null> {
   if (outputDirectory) {
     const parsed = path.parse(path.join(outputDirectory, path.basename(defaultPath)))
@@ -89,15 +107,41 @@ async function executeJob(
   expectedDuration: number,
   sender: Electron.WebContents,
   output: string,
+  fallbackArgs?: string[],
 ): Promise<{ cancelled: boolean; outputPath?: string }> {
   try {
-    const result = await runFfmpeg(jobId, args, expectedDuration, sender)
+    let result
+    try {
+      result = await runFfmpeg(jobId, args, expectedDuration, sender)
+    } catch (error) {
+      if (!fallbackArgs) throw error
+      await fs.promises.rm(output, { force: true })
+      if (!sender.isDestroyed()) sender.send('video:progress', {
+        jobId,
+        progress: 0,
+        message: 'GPU処理に失敗したためCPUへ切り替えています…',
+      })
+      result = await runFfmpeg(jobId, fallbackArgs, expectedDuration, sender)
+    }
     if (result.cancelled) await fs.promises.rm(output, { force: true })
     return { cancelled: result.cancelled, outputPath: result.cancelled ? undefined : output }
   } catch (error) {
     await fs.promises.rm(output, { force: true })
     throw error
   }
+}
+
+async function resolveEncoding(preference: EncodingPreference = 'auto'): Promise<VideoEncoder> {
+  const available = await detectVideoEncoders()
+  if (preference === 'auto') return available[0] ?? 'cpu'
+  if (preference === 'cpu' || preference === 'nvenc' || preference === 'qsv' || preference === 'amf') {
+    return available.includes(preference) ? preference : 'cpu'
+  }
+  return 'cpu'
+}
+
+function resolveQuality(quality?: EncodingQuality): EncodingQuality {
+  return quality === 'fast' || quality === 'quality' ? quality : 'standard'
 }
 
 function createWindow(): void {
@@ -184,29 +228,38 @@ ipcMain.handle('video:extract', async (event, request: EditRequest) => {
   const output = await chooseOutput(defaultOutputPath(source, '-clip'), [{ name: 'MP4動画', extensions: ['mp4'] }])
   if (!output) return { cancelled: true }
   if (path.resolve(output) === source) throw new Error('元動画とは別のファイル名を指定してください。')
+  const encoder = await resolveEncoding(request.encoder)
+  const quality = resolveQuality(request.quality)
+  const cpuArgs = encoder === 'cpu' ? undefined : extractArgs(source, request.start, request.end, metadata.hasAudio, output, 'cpu', quality)
   return executeJob(
     request.jobId,
-    extractArgs(source, request.start, request.end, metadata.hasAudio, output),
+    extractArgs(source, request.start, request.end, metadata.hasAudio, output, encoder, quality),
     request.end - request.start,
     event.sender,
     output,
+    cpuArgs,
   )
 })
 
-ipcMain.handle('video:remove', async (event, request: EditRequest) => {
+ipcMain.handle('video:remove', async (event, request: RemoveRangesRequest) => {
   const source = assertAllowed(request.sourcePath)
   const metadata = registeredMetadata(source)
-  validateRange(request.start, request.end, metadata.duration)
-  if (request.end - request.start >= metadata.duration - 0.001) throw new Error('動画全体を削除することはできません。')
+  const ranges = normalizeRanges(request.ranges, metadata.duration)
+  const removedDuration = ranges.reduce((sum, range) => sum + range.end - range.start, 0)
+  if (removedDuration >= metadata.duration - 0.001) throw new Error('動画全体を削除することはできません。')
   const output = await chooseOutput(defaultOutputPath(source, '-removed'), [{ name: 'MP4動画', extensions: ['mp4'] }])
   if (!output) return { cancelled: true }
   if (path.resolve(output) === source) throw new Error('元動画とは別のファイル名を指定してください。')
+  const encoder = await resolveEncoding(request.encoder)
+  const quality = resolveQuality(request.quality)
+  const cpuArgs = encoder === 'cpu' ? undefined : removeRangesArgs(source, ranges, metadata.duration, metadata.hasAudio, output, 'cpu', quality)
   return executeJob(
     request.jobId,
-    removeArgs(source, request.start, request.end, metadata.duration, metadata.hasAudio, output),
-    metadata.duration - (request.end - request.start),
+    removeRangesArgs(source, ranges, metadata.duration, metadata.hasAudio, output, encoder, quality),
+    metadata.duration - removedDuration,
     event.sender,
     output,
+    cpuArgs,
   )
 })
 
@@ -222,12 +275,16 @@ ipcMain.handle('video:concatenate', async (event, request: ConcatRequest) => {
   if (!output) return { cancelled: true }
   if (sources.includes(path.resolve(output))) throw new Error('入力動画とは別のファイル名を指定してください。')
   const totalDuration = inputs.reduce((sum, input) => sum + input.metadata.duration, 0)
+  const encoder = await resolveEncoding(request.encoder)
+  const quality = resolveQuality(request.quality)
+  const cpuArgs = encoder === 'cpu' ? undefined : concatenateArgs(inputs, output, 'cpu', quality)
   return executeJob(
     request.jobId,
-    concatenateArgs(inputs, output),
+    concatenateArgs(inputs, output, encoder, quality),
     totalDuration,
     event.sender,
     output,
+    cpuArgs,
   )
 })
 
@@ -248,3 +305,4 @@ ipcMain.handle('settings:clear-output-directory', async () => {
   outputDirectory = ''
   await saveSettings()
 })
+ipcMain.handle('settings:get-encoding-capabilities', async () => ({ available: await detectVideoEncoders() }))

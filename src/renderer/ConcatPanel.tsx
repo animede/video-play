@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { OperationProgress, RegisteredVideo } from '../shared/types'
+import type { EncodingPreference, EncodingQuality, OperationProgress, RegisteredVideo } from '../shared/types'
 import { formatTime, readableError } from './utils'
 
 type QueueStatus = 'processing' | 'ready' | 'error'
@@ -16,6 +16,8 @@ interface QueueItem {
 
 interface ConcatPanelProps {
   hidden: boolean
+  encodingPreference: EncodingPreference
+  encodingQuality: EncodingQuality
 }
 
 function fileSize(bytes: number): string {
@@ -23,7 +25,7 @@ function fileSize(bytes: number): string {
   return `${(bytes / 1024 ** 2).toFixed(1)} MB`
 }
 
-function ConcatPanel({ hidden }: ConcatPanelProps) {
+function ConcatPanel({ hidden, encodingPreference, encodingQuality }: ConcatPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const processingChain = useRef(Promise.resolve())
   const thumbnailUrls = useRef(new Set<string>())
@@ -142,6 +144,8 @@ function ConcatPanel({ hidden }: ConcatPanelProps) {
       const result = await window.videoPlay.concatenateVideos({
         jobId,
         sourcePaths: videos.map((video) => video.path),
+        encoder: encodingPreference,
+        quality: encodingQuality,
       })
       if (!result.cancelled && result.outputPath) setNotice(`保存しました: ${result.outputPath}`)
     } catch (reason) {

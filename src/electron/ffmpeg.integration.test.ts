@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { concatenateArgs, decodeFramesJpeg, extractArgs, getFrameWindow, probeVideo, removeArgs } from './ffmpeg'
+import { concatenateArgs, decodeFramesJpeg, detectVideoEncoders, extractArgs, getFrameWindow, probeVideo, removeArgs, removeRangesArgs } from './ffmpeg'
 
 const ffmpeg = require('ffmpeg-static') as string
 let directory: string
@@ -36,6 +36,12 @@ describe('FFmpeg integration', () => {
   }, 15_000)
 
   afterAll(() => rmSync(directory, { recursive: true, force: true }))
+
+  it('always exposes the tested CPU encoder', async () => {
+    const encoders = await detectVideoEncoders()
+    expect(encoders).toContain('cpu')
+    expect(encoders.at(-1)).toBe('cpu')
+  })
 
   it('probes metadata and only the requested frame window', async () => {
     const metadata = await probeVideo(source)
@@ -80,6 +86,18 @@ describe('FFmpeg integration', () => {
     const frameWindow = await getFrameWindow(output, 0)
     expect(metadata.duration).toBeCloseTo(2, 1)
     expect(frameWindow.timestamps).toHaveLength(60)
+  })
+
+  it('removes multiple ranges in one encode', async () => {
+    const output = path.join(directory, 'multi-removed.mp4')
+    const args = removeRangesArgs(source, [
+      { start: 0.5, end: 1 },
+      { start: 2, end: 2.5 },
+    ], 3, true, output)
+    execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', ...args])
+    const metadata = await probeVideo(output)
+    expect(metadata.duration).toBeCloseTo(2, 1)
+    expect(metadata.hasAudio).toBe(true)
   })
 
   it('concatenates different sizes and supplies missing audio', async () => {
