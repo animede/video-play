@@ -262,6 +262,18 @@ export function frameArgs(source: string, time: number, output: string): string[
   return ['-ss', time.toFixed(6), '-i', source, '-map', '0:v:0', '-frames:v', '1', '-y', output]
 }
 
+export function extractRangeFramesArgs(source: string, start: number, end: number, outputPattern: string, frameInterval = 0): string[] {
+  const args = [
+    '-ss', start.toFixed(6),
+    '-i', source,
+    '-t', (end - start).toFixed(6),
+    '-map', '0:v:0',
+  ]
+  if (frameInterval > 0) args.push('-vf', `select=not(mod(n\\,${frameInterval}))`)
+  args.push('-frames:v', '1000', '-vsync', '0', '-f', 'image2', '-y', outputPattern)
+  return args
+}
+
 export function videoEncodingArgs(encoder: VideoEncoder = 'cpu', quality: EncodingQuality = 'standard'): string[] {
   if (encoder === 'nvenc') {
     const settings = { fast: ['p2', '23'], standard: ['p4', '20'], quality: ['p6', '18'] }[quality]

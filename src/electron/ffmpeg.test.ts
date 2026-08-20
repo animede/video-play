@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { concatenateArgs, extractArgs, frameArgs, removeArgs, removeRangesArgs, videoEncodingArgs } from './ffmpeg'
+import { concatenateArgs, extractArgs, extractRangeFramesArgs, frameArgs, removeArgs, removeRangesArgs, videoEncodingArgs } from './ffmpeg'
 import type { VideoMetadata } from '../shared/types'
 
 const metadata = (overrides: Partial<VideoMetadata> = {}): VideoMetadata => ({
@@ -35,6 +35,20 @@ describe('FFmpeg argument construction', () => {
   it('maps audio optionally when extracting', () => {
     expect(extractArgs('in.mp4', 1, 3, true, 'out.mp4')).toContain('0:a:0?')
     expect(extractArgs('in.mp4', 1, 3, false, 'out.mp4')).not.toContain('0:a:0?')
+  })
+
+  it('uses all frames when interval is 0 for range frame extraction', () => {
+    const args = extractRangeFramesArgs('in.mp4', 1, 3, 'frames/frame-%06d.png', 0)
+    expect(args).not.toContain('-vf')
+    expect(args).toContain('-frames:v')
+    expect(args).toContain('1000')
+  })
+
+  it('applies select filter when frame interval is set', () => {
+    const args = extractRangeFramesArgs('in.mp4', 1, 3, 'frames/frame-%06d.png', 3)
+    const vfIndex = args.indexOf('-vf')
+    expect(vfIndex).toBeGreaterThanOrEqual(0)
+    expect(args[vfIndex + 1]).toContain('mod(n\\,3)')
   })
 
   it('concatenates both sides for a middle removal', () => {

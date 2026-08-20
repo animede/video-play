@@ -10,7 +10,7 @@ const MAX_FRAME_IMAGE_CACHE = 12
 const PREFETCH_RADIUS = 2
 
 interface ActiveJob extends OperationProgress {
-  kind: 'frame' | 'extract' | 'remove'
+  kind: 'frame' | 'extract' | 'remove' | 'range-frames'
 }
 
 interface ExactFrame {
@@ -50,6 +50,7 @@ function App() {
   const [timelinePreview, setTimelinePreview] = useState<TimelinePreview | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [outputDirectory, setOutputDirectory] = useState('')
+  const [frameIntervalSetting, setFrameIntervalSetting] = useState(0)
   const [removalRanges, setRemovalRanges] = useState<TimeRange[]>([])
   const [encodingPreference, setEncodingPreference] = useState<EncodingPreference>(() =>
     (localStorage.getItem('encodingPreference') as EncodingPreference | null) ?? 'auto')
@@ -68,6 +69,7 @@ function App() {
   }), [])
 
   useEffect(() => { void window.videoPlay.getOutputDirectory().then(setOutputDirectory) }, [])
+  useEffect(() => { void window.videoPlay.getFrameInterval().then((value) => setFrameIntervalSetting(Math.max(0, Math.floor(value)))) }, [])
   useEffect(() => {
     void window.videoPlay.getEncodingCapabilities().then(({ available }) => {
       setAvailableEncoders(available)
@@ -337,11 +339,18 @@ function App() {
     setError('')
     setNotice('')
     const jobId = crypto.randomUUID()
-    const labels = { frame: '静止画を保存', extract: '区間を抽出', remove: '区間を削除' }
+    const labels = {
+      frame: '静止画を保存',
+      extract: '区間を抽出',
+      remove: '区間を削除',
+      'range-frames': '区間フレームを抽出',
+    }
     setJob({ jobId, kind, progress: 0, message: `${labels[kind]}しています…` })
     try {
       const result = kind === 'frame'
         ? await window.videoPlay.saveFrame({ jobId, sourcePath: video.path, time: currentTime })
+        : kind === 'range-frames'
+          ? await window.videoPlay.extractRangeFrames({ jobId, sourcePath: video.path, start: inPoint, end: outPoint })
         : kind === 'extract'
           ? await window.videoPlay.extractRange({ jobId, sourcePath: video.path, start: inPoint, end: outPoint, encoder: encodingPreference, quality: encodingQuality })
           : await window.videoPlay.removeRanges({ jobId, sourcePath: video.path, ranges: removalRanges, encoder: encodingPreference, quality: encodingQuality })
@@ -577,6 +586,7 @@ function App() {
           <button className="button danger" onClick={addRemovalRange} disabled={!selectionValid || Boolean(job)}>削除区間へ追加</button>
           <div className="edit-actions">
             <button className="button" onClick={() => void runOperation('frame')} disabled={!video || Boolean(job)}>静止画を保存</button>
+            <button className="button" onClick={() => void runOperation('range-frames')} disabled={!selectionValid || Boolean(job)}>区間フレーム抽出</button>
             <button className="button" onClick={() => void runOperation('extract')} disabled={!selectionValid || Boolean(job)}>区間を抽出</button>
           </div>
         </div>
@@ -614,7 +624,7 @@ function App() {
       {job && (
         <div className="modal-backdrop">
           <div className="progress-dialog" role="dialog" aria-modal="true" aria-label="処理の進捗">
-            <h2>{job.kind === 'frame' ? '静止画を保存' : job.kind === 'extract' ? '区間を抽出' : '区間を削除'}</h2>
+            <h2>{job.kind === 'frame' ? '静止画を保存' : job.kind === 'extract' ? '区間を抽出' : job.kind === 'range-frames' ? '区間フレームを抽出' : '区間を削除'}</h2>
             <p>{job.message}</p>
             <progress max="1" value={job.progress} />
             <div className="progress-value">{Math.round(job.progress * 100)}%</div>
@@ -631,6 +641,26 @@ function App() {
             <div className="settings-actions">
               <button className="button" onClick={async () => { const value = await window.videoPlay.chooseOutputDirectory(); if (value) setOutputDirectory(value) }}>フォルダーを選択</button>
               <button className="button" disabled={!outputDirectory} onClick={async () => { await window.videoPlay.clearOutputDirectory(); setOutputDirectory('') }}>毎回選択に戻す</button>
+            </div>
+            <div className="encoding-settings">
+              <label>
+                <span>区間フレーム抽出の間隔</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={frameIntervalSetting}
+                  onChange={(event) => {
+                    const raw = Number(event.target.value)
+                    setFrameIntervalSetting(Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 0)
+                  }}
+                  onBlur={async () => {
+                    const saved = await window.videoPlay.setFrameInterval(frameIntervalSetting)
+                    setFrameIntervalSetting(saved)
+                  }}
+                />
+              </label>
+              <p>0: 全フレーム保存 / 1以上: 指定したフレーム間隔で順次保存（例: 2で2フレームごと）</p>
             </div>
             <div className="encoding-settings">
               <label>

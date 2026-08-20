@@ -74,6 +74,13 @@ export interface FrameRequest {
   time: number
 }
 
+export interface RangeFramesRequest {
+  jobId: string
+  sourcePath: string
+  start: number
+  end: number
+}
+
 export interface ConcatRequest extends EncodingOptions {
   jobId: string
   sourcePaths: string[]
@@ -84,12 +91,15 @@ export interface VideoPlayApi {
   getFrameWindow(sourcePath: string, time: number): Promise<FrameWindow>
   decodeFrames(sourcePath: string, times: number[]): Promise<DecodedFrame[]>
   saveFrame(request: FrameRequest): Promise<OperationResult>
+  extractRangeFrames(request: RangeFramesRequest): Promise<OperationResult>
   extractRange(request: EditRequest): Promise<OperationResult>
   removeRanges(request: RemoveRangesRequest): Promise<OperationResult>
   concatenateVideos(request: ConcatRequest): Promise<OperationResult>
   getOutputDirectory(): Promise<string>
   chooseOutputDirectory(): Promise<string | null>
   clearOutputDirectory(): Promise<void>
+  getFrameInterval(): Promise<number>
+  setFrameInterval(value: number): Promise<number>
   getEncodingCapabilities(): Promise<EncodingCapabilities>
   cancelJob(jobId: string): Promise<void>
   onProgress(callback: (progress: OperationProgress) => void): () => void

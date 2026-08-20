@@ -1,13 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, session } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { ConcatRequest, EditRequest, EncodingPreference, EncodingQuality, FrameRequest, RegisteredVideo, RemoveRangesRequest, TimeRange, VideoEncoder, VideoMetadata } from '../shared/types'
+import type { ConcatRequest, EditRequest, EncodingPreference, EncodingQuality, FrameRequest, RangeFramesRequest, RegisteredVideo, RemoveRangesRequest, TimeRange, VideoEncoder, VideoMetadata } from '../shared/types'
 import {
   cancelJob,
   concatenateArgs,
   decodeFramesJpeg,
   defaultOutputPath,
   detectVideoEncoders,
+  extractRangeFramesArgs,
   extractArgs,
   frameArgs,
   getFrameWindow,
@@ -18,6 +19,21 @@ import {
 
 const registeredVideos = new Map<string, VideoMetadata>()
 let outputDirectory = ''
+let frameSequence = 0
+let frameInterval = 0
+const MAX_RANGE_FRAMES = 1000
+
+interface AppSettings {
+  outputDirectory?: unknown
+  frameSequence?: unknown
+  frameInterval?: unknown
+}
+
+function normalizeFrameInterval(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) return 0
+  return Math.floor(parsed)
+}
 
 function settingsPath(): string {
   return path.join(app.getPath('userData'), 'settings.json')
@@ -25,16 +41,41 @@ function settingsPath(): string {
 
 function loadSettings(): void {
   try {
-    const settings = JSON.parse(fs.readFileSync(settingsPath(), 'utf8')) as { outputDirectory?: unknown }
+    const settings = JSON.parse(fs.readFileSync(settingsPath(), 'utf8')) as AppSettings
     if (typeof settings.outputDirectory === 'string' && fs.statSync(settings.outputDirectory).isDirectory()) {
       outputDirectory = settings.outputDirectory
     }
+    if (typeof settings.frameSequence === 'number' && Number.isFinite(settings.frameSequence) && settings.frameSequence >= 0) {
+      frameSequence = Math.floor(settings.frameSequence)
+    }
+    frameInterval = normalizeFrameInterval(settings.frameInterval)
   } catch { /* Missing or stale settings use the save dialog. */ }
 }
 
 async function saveSettings(): Promise<void> {
   await fs.promises.mkdir(path.dirname(settingsPath()), { recursive: true })
-  await fs.promises.writeFile(settingsPath(), JSON.stringify({ outputDirectory }, null, 2), 'utf8')
+  await fs.promises.writeFile(settingsPath(), JSON.stringify({ outputDirectory, frameSequence, frameInterval }, null, 2), 'utf8')
+}
+
+async function reserveFrameDirectory(): Promise<string> {
+  if (!outputDirectory) throw new Error('設定でファイル保存先フォルダーを選択してください。')
+  await fs.promises.mkdir(outputDirectory, { recursive: true })
+  let index = Math.max(0, Math.floor(frameSequence))
+  while (true) {
+    const directory = path.join(outputDirectory, `flame${index}`)
+    try {
+      await fs.promises.mkdir(directory)
+      frameSequence = index + 1
+      await saveSettings()
+      return directory
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+        index += 1
+        continue
+      }
+      throw error
+    }
+  }
 }
 
 function normalizeVideoPath(filePath: string): string {
@@ -221,6 +262,35 @@ ipcMain.handle('video:save-frame', async (event, request: FrameRequest) => {
   return executeJob(request.jobId, frameArgs(source, time, output), 1, event.sender, output)
 })
 
+ipcMain.handle('video:extract-range-frames', async (event, request: RangeFramesRequest) => {
+  const source = assertAllowed(request.sourcePath)
+  const metadata = registeredMetadata(source)
+  validateRange(request.start, request.end, metadata.duration)
+  const interval = frameInterval > 0 ? frameInterval : 1
+  const estimatedFrames = Math.ceil((request.end - request.start) * Math.max(1, metadata.averageFps) / interval)
+  if (estimatedFrames > MAX_RANGE_FRAMES) {
+    throw new Error(`区間フレーム抽出は最大${MAX_RANGE_FRAMES}フレームまでです。区間を短くしてください。`)
+  }
+  const outputDirectoryPath = await reserveFrameDirectory()
+  const outputPattern = path.join(outputDirectoryPath, 'frame-%06d.png')
+  try {
+    const result = await runFfmpeg(
+      request.jobId,
+      extractRangeFramesArgs(source, request.start, request.end, outputPattern, frameInterval),
+      request.end - request.start,
+      event.sender,
+    )
+    if (result.cancelled) {
+      await fs.promises.rm(outputDirectoryPath, { recursive: true, force: true })
+      return { cancelled: true }
+    }
+    return { cancelled: false, outputPath: outputDirectoryPath }
+  } catch (error) {
+    await fs.promises.rm(outputDirectoryPath, { recursive: true, force: true })
+    throw error
+  }
+})
+
 ipcMain.handle('video:extract', async (event, request: EditRequest) => {
   const source = assertAllowed(request.sourcePath)
   const metadata = registeredMetadata(source)
@@ -304,5 +374,11 @@ ipcMain.handle('settings:choose-output-directory', async () => {
 ipcMain.handle('settings:clear-output-directory', async () => {
   outputDirectory = ''
   await saveSettings()
+})
+ipcMain.handle('settings:get-frame-interval', () => frameInterval)
+ipcMain.handle('settings:set-frame-interval', async (_event, value: number) => {
+  frameInterval = normalizeFrameInterval(value)
+  await saveSettings()
+  return frameInterval
 })
 ipcMain.handle('settings:get-encoding-capabilities', async () => ({ available: await detectVideoEncoders() }))

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { ConcatRequest, EditRequest, FrameRequest, OperationProgress, RemoveRangesRequest, VideoPlayApi } from '../shared/types'
+import type { ConcatRequest, EditRequest, FrameRequest, OperationProgress, RangeFramesRequest, RemoveRangesRequest, VideoPlayApi } from '../shared/types'
 
 const api: VideoPlayApi = {
   registerVideo(file: File) {
@@ -13,6 +13,9 @@ const api: VideoPlayApi = {
   },
   saveFrame(request: FrameRequest) {
     return ipcRenderer.invoke('video:save-frame', request)
+  },
+  extractRangeFrames(request: RangeFramesRequest) {
+    return ipcRenderer.invoke('video:extract-range-frames', request)
   },
   extractRange(request: EditRequest) {
     return ipcRenderer.invoke('video:extract', request)
@@ -31,6 +34,12 @@ const api: VideoPlayApi = {
   },
   clearOutputDirectory() {
     return ipcRenderer.invoke('settings:clear-output-directory')
+  },
+  getFrameInterval() {
+    return ipcRenderer.invoke('settings:get-frame-interval')
+  },
+  setFrameInterval(value: number) {
+    return ipcRenderer.invoke('settings:set-frame-interval', value)
   },
   getEncodingCapabilities() {
     return ipcRenderer.invoke('settings:get-encoding-capabilities')
