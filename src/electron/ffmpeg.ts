@@ -270,7 +270,7 @@ export function extractRangeFramesArgs(source: string, start: number, end: numbe
     '-map', '0:v:0',
   ]
   if (frameInterval > 0) args.push('-vf', `select=not(mod(n\\,${frameInterval}))`)
-  args.push('-frames:v', '1000', '-vsync', '0', '-f', 'image2', '-y', outputPattern)
+  args.push('-frames:v', '1000', '-fps_mode', 'passthrough', '-f', 'image2', '-y', outputPattern)
   return args
 }
 

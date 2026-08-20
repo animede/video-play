@@ -42,6 +42,8 @@ describe('FFmpeg argument construction', () => {
     expect(args).not.toContain('-vf')
     expect(args).toContain('-frames:v')
     expect(args).toContain('1000')
+    expect(args).toContain('-fps_mode')
+    expect(args).toContain('passthrough')
   })
 
   it('applies select filter when frame interval is set', () => {
