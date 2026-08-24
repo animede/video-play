@@ -210,6 +210,8 @@ function createWindow(): void {
   else void window.loadFile(path.join(__dirname, '../../dist/index.html'))
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.on('enter-full-screen', () => window.webContents.send('window:fullscreen-changed', true))
+  window.on('leave-full-screen', () => window.webContents.send('window:fullscreen-changed', false))
   window.webContents.on('will-navigate', (event, url) => {
     const expectedOrigin = devServer ? new URL(devServer).origin : 'file://'
     if ((devServer && new URL(url).origin !== expectedOrigin) || (!devServer && !url.startsWith(expectedOrigin))) {
@@ -232,6 +234,13 @@ app.on('window-all-closed', () => {
 })
 
 ipcMain.handle('video:register', (_event, filePath: string) => registerVideo(filePath))
+ipcMain.handle('window:set-fullscreen', (event, fullscreen: boolean) => {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!window) throw new Error('ウィンドウを取得できません。')
+  const requested = Boolean(fullscreen)
+  window.setFullScreen(requested)
+  return requested
+})
 ipcMain.handle('video:frame-window', (_event, sourcePath: string, time: number) => {
   if (!Number.isFinite(time) || time < 0) throw new Error('フレーム解析位置が正しくありません。')
   return getFrameWindow(assertAllowed(sourcePath), time)

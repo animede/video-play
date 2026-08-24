@@ -101,6 +101,8 @@ export interface VideoPlayApi {
   getFrameInterval(): Promise<number>
   setFrameInterval(value: number): Promise<number>
   getEncodingCapabilities(): Promise<EncodingCapabilities>
+  setFullscreen(fullscreen: boolean): Promise<boolean>
   cancelJob(jobId: string): Promise<void>
   onProgress(callback: (progress: OperationProgress) => void): () => void
+  onFullscreenChange(callback: (fullscreen: boolean) => void): () => void
 }

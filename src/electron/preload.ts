@@ -44,6 +44,9 @@ const api: VideoPlayApi = {
   getEncodingCapabilities() {
     return ipcRenderer.invoke('settings:get-encoding-capabilities')
   },
+  setFullscreen(fullscreen: boolean) {
+    return ipcRenderer.invoke('window:set-fullscreen', fullscreen)
+  },
   cancelJob(jobId: string) {
     return ipcRenderer.invoke('video:cancel', jobId)
   },
@@ -51,6 +54,11 @@ const api: VideoPlayApi = {
     const listener = (_event: Electron.IpcRendererEvent, progress: OperationProgress) => callback(progress)
     ipcRenderer.on('video:progress', listener)
     return () => ipcRenderer.removeListener('video:progress', listener)
+  },
+  onFullscreenChange(callback: (fullscreen: boolean) => void) {
+    const listener = (_event: Electron.IpcRendererEvent, fullscreen: boolean) => callback(fullscreen)
+    ipcRenderer.on('window:fullscreen-changed', listener)
+    return () => ipcRenderer.removeListener('window:fullscreen-changed', listener)
   },
 }
 

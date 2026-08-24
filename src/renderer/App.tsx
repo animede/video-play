@@ -49,6 +49,8 @@ function App() {
   const [rangeZoom, setRangeZoom] = useState(false)
   const [timelinePreview, setTimelinePreview] = useState<TimelinePreview | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [controlsHidden, setControlsHidden] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
   const [outputDirectory, setOutputDirectory] = useState('')
   const [frameIntervalSetting, setFrameIntervalSetting] = useState(0)
   const [removalRanges, setRemovalRanges] = useState<TimeRange[]>([])
@@ -99,6 +101,11 @@ function App() {
     const timeout = window.setTimeout(() => setNotice(''), 5000)
     return () => window.clearTimeout(timeout)
   }, [notice])
+
+  useEffect(() => window.videoPlay.onFullscreenChange((active) => {
+    setFullscreen(active)
+    if (!active) setControlsHidden(false)
+  }), [])
 
   const clearExactFrame = useCallback(() => {
     frameDecodeSequence.current += 1
@@ -430,9 +437,34 @@ function App() {
     setActiveTab(tab)
   }
 
+  const enterFullscreen = async () => {
+    if (!video) return
+    setControlsHidden(true)
+    try {
+      const active = await window.videoPlay.setFullscreen(true)
+      setFullscreen(active)
+      if (!active) setControlsHidden(false)
+    } catch (reason) {
+      setControlsHidden(false)
+      setError(`全画面表示に切り替えられませんでした: ${readableError(reason)}`)
+    }
+  }
+
+  const restoreControls = async () => {
+    if (fullscreen) {
+      try {
+        await window.videoPlay.setFullscreen(false)
+      } catch (reason) {
+        setError(`全画面表示を終了できませんでした: ${readableError(reason)}`)
+        return
+      }
+    }
+    setControlsHidden(false)
+  }
+
   return (
     <main
-      className={`app ${dragging ? 'is-dragging' : ''}`}
+      className={`app ${dragging ? 'is-dragging' : ''} ${fullscreen ? 'window-fullscreen' : ''}`}
       onDragOver={(event) => { if (activeTab === 'player') { event.preventDefault(); setDragging(true) } }}
       onDragLeave={(event) => { if (event.currentTarget === event.target) setDragging(false) }}
       onDrop={(event) => {
@@ -464,7 +496,10 @@ function App() {
         }} />
       </header>
 
-      <div className="tab-page player-page" hidden={activeTab !== 'player'}>
+      <div
+        className={`tab-page player-page ${controlsHidden ? 'controls-hidden' : ''} ${fullscreen ? 'is-fullscreen' : ''}`}
+        hidden={activeTab !== 'player'}
+      >
         <section className="viewer-shell">
         {videoUrl ? (
           <div className="media-stage">
@@ -494,6 +529,11 @@ function App() {
           </button>
         )}
         {dragging && <div className="drop-overlay">MP4ファイルをドロップ</div>}
+        {controlsHidden && (
+          <button className="restore-controls" onClick={() => void restoreControls()} title="操作エリアに戻る" aria-label="操作エリアに戻る">
+            ↩
+          </button>
+        )}
         </section>
 
         <section className="control-panel" aria-disabled={!video}>
@@ -559,6 +599,10 @@ function App() {
               {SPEEDS.map((value) => <option key={value} value={value}>{value}×</option>)}
             </select>
           </label>
+          <div className="view-actions">
+            <button className="button" onClick={() => setControlsHidden(true)} disabled={!video || Boolean(job)}>操作を隠す</button>
+            <button className="button" onClick={() => void enterFullscreen()} disabled={!video || Boolean(job)}>全画面表示</button>
+          </div>
           {video && (
             <span className="media-info">
               {video.metadata.width}×{video.metadata.height} · {video.metadata.averageFps.toFixed(3)} fps · {video.metadata.codec}
