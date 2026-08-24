@@ -42,8 +42,13 @@ button { color: inherit; }
 .app-tabs button.active { color: #eef5ff; background: #397edc; }
 .tab-page[hidden], .concat-page[hidden] { display: none; }
 .player-page { display: grid; grid-template-rows: minmax(200px, 1fr) auto; min-width: 0; min-height: 0; }
-.player-page.controls-hidden { grid-template-rows: minmax(0, 1fr); }
-.player-page.controls-hidden .control-panel { display: none; }
+.player-page.controls-hidden { position: relative; grid-template-rows: minmax(0, 1fr); }
+.player-page.controls-hidden .control-panel { position: absolute; right: 0; bottom: 0; left: 0; z-index: 5; padding-top: 10px; padding-bottom: 10px; opacity: 0; visibility: hidden; transform: translateY(12px); transition: opacity .15s, transform .15s, visibility .15s; pointer-events: none; }
+.player-page.controls-hidden.playback-controls-visible .control-panel { opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto; }
+.player-page.controls-hidden .edit-row,
+.player-page.controls-hidden .removal-panel,
+.player-page.controls-hidden .view-actions,
+.player-page.controls-hidden .media-info { display: none; }
 .player-page.is-fullscreen { width: 100%; height: 100%; background: #08090b; }
 .player-page.is-fullscreen .viewer-shell { padding: 0; }
 

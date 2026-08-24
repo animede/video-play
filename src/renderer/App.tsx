@@ -25,6 +25,7 @@ interface TimelinePreview extends ExactFrame {
 function App() {
   const inputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const controlPanelRef = useRef<HTMLElement>(null)
   const loadSequence = useRef(0)
   const frameWindowsRef = useRef<FrameWindow[]>([])
   const inflightFrameWindows = useRef(new Set<string>())
@@ -50,6 +51,7 @@ function App() {
   const [timelinePreview, setTimelinePreview] = useState<TimelinePreview | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [controlsHidden, setControlsHidden] = useState(false)
+  const [playbackControlsVisible, setPlaybackControlsVisible] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [outputDirectory, setOutputDirectory] = useState('')
   const [frameIntervalSetting, setFrameIntervalSetting] = useState(0)
@@ -106,6 +108,10 @@ function App() {
     setFullscreen(active)
     if (!active) setControlsHidden(false)
   }), [])
+
+  useEffect(() => {
+    if (!controlsHidden) setPlaybackControlsVisible(false)
+  }, [controlsHidden])
 
   const clearExactFrame = useCallback(() => {
     frameDecodeSequence.current += 1
@@ -462,6 +468,12 @@ function App() {
     setControlsHidden(false)
   }
 
+  const revealPlaybackControls = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!controlsHidden) return
+    const panelTop = controlPanelRef.current?.getBoundingClientRect().top
+    if (panelTop !== undefined) setPlaybackControlsVisible(event.clientY >= panelTop)
+  }
+
   return (
     <main
       className={`app ${dragging ? 'is-dragging' : ''} ${fullscreen ? 'window-fullscreen' : ''}`}
@@ -497,8 +509,10 @@ function App() {
       </header>
 
       <div
-        className={`tab-page player-page ${controlsHidden ? 'controls-hidden' : ''} ${fullscreen ? 'is-fullscreen' : ''}`}
+        className={`tab-page player-page ${controlsHidden ? 'controls-hidden' : ''} ${playbackControlsVisible ? 'playback-controls-visible' : ''} ${fullscreen ? 'is-fullscreen' : ''}`}
         hidden={activeTab !== 'player'}
+        onMouseMove={revealPlaybackControls}
+        onMouseLeave={() => setPlaybackControlsVisible(false)}
       >
         <section className="viewer-shell">
         {videoUrl ? (
@@ -536,7 +550,7 @@ function App() {
         )}
         </section>
 
-        <section className="control-panel" aria-disabled={!video}>
+        <section ref={controlPanelRef} className="control-panel" aria-disabled={!video}>
         <div className="timeline-wrap">
           {timelinePreview && (
             <div className="timeline-preview" style={{ left: `${timelinePreview.x}px` }}>
