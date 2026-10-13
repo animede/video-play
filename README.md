@@ -236,3 +236,9 @@ chmod +x "release/Video-player-0.2.0-Linux-x86_64.AppImage"
 ## FFmpegについて
 
 本アプリは`ffmpeg-static`および`ffprobe-static`から提供されるFFmpeg関連バイナリを利用します。配布時には各パッケージおよびFFmpegのライセンス条件を確認し、必要なライセンス文書とソース提供案内を添付してください。
+
+## ライセンス
+
+本リポジトリのソースコードは [Apache License 2.0](LICENSE) で提供します。
+著作権者: © 2026 YUZUKI (animede)。著作権表示と [NOTICE](NOTICE) の内容は、再配布時も保持してください。
+モデルや依存ライブラリ等には各配布元のライセンスが別途適用されます。
